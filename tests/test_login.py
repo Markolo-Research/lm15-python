@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 
 from lm15 import Message
-from lm15.errors import AuthOperationError, NotConfiguredError, ServerError, TransportError
+from lm15.errors import AuthOperationError, NotConfiguredError, RateLimitError, ServerError, TransportError
 from lm15.login import Auth, FileStore, LoginCancelled, MemoryStore, TerminalUI, providers
 from lm15.login.bound import BoundClient, model_choices
 from lm15.login.engine import CallbackListener, LoginContext, parse_manual_return, run_device_flow, DeviceStep
@@ -102,6 +102,8 @@ class FakeXai:
         if url.endswith("/token") and data.get("grant_type") == "refresh_token":
             if self.refresh == "rejected":
                 raise _http_error(url, 401, {"error": "invalid_grant", "error_description": SENTINEL})
+            if self.refresh == "rate_limit":
+                raise _http_error(url, 429, {"error": "temporarily_unavailable"})
             if self.refresh == "server":
                 raise _http_error(url, 503, {})
             if self.refresh == "timeout":
@@ -546,6 +548,32 @@ def test_transient_failure_keeps_credentials(sandbox: Path) -> None:
     with pytest.raises(TransportError):
         auth2.request_auth("xai")
     assert auth2.status("xai").usability == "renewal_due"
+
+
+def test_rate_limited_renewal_is_not_retried_and_can_succeed_later(sandbox: Path) -> None:
+    clock = Clock()
+    server = FakeXai(refresh="rate_limit")
+    auth = make_auth(sandbox, clock, server)
+    auth.login("xai", "device", ui=ScriptUI())
+    clock.advance(3400)
+
+    with pytest.raises(RateLimitError) as info:
+        auth.request_auth("xai")
+    assert info.value.status == 429
+    refreshes = [d for _, d in server.calls if d.get("grant_type") == "refresh_token"]
+    assert len(refreshes) == 1
+    status = auth.status("xai")
+    assert status.usability == "renewal_due"
+    assert status.connection.credential_revision == "1"
+    document = json.loads((sandbox / "credentials.json").read_text(encoding="utf-8"))
+    assert document["xai"]["access"] == f"{ACCESS}1"
+    assert document["xai"]["refresh"] == f"{REFRESH}1"
+    assert "renewal_in_flight" not in document["_lm15"]["slots"]["xai"]
+
+    server.refresh = "ok"
+    assert auth.request_auth("xai").credential.value == f"{ACCESS}2"
+    assert auth.status("xai").connection.credential_revision == "2"
+    assert len([d for _, d in server.calls if d.get("grant_type") == "refresh_token"]) == 2
 
 
 def test_uncertain_exchange_is_indeterminate_not_retried(sandbox: Path) -> None:
