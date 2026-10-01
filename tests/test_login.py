@@ -793,6 +793,24 @@ def test_bound_client_is_pinned_and_thin(sandbox: Path) -> None:
     assert auth.status("xai").presence == "absent"  # close is not logout; logout was explicit above
 
 
+def test_bound_client_keyword_model_cannot_override_selection(sandbox: Path) -> None:
+    clock = Clock()
+    auth = make_auth(sandbox, clock)
+    connection = auth.login("xai", "device", ui=ScriptUI())
+    selection = ModelSelection(provider="xai", model="grok-4", connection_id=connection.id,
+                               identity_generation=connection.identity_generation)
+    transport = FakeTransport([])
+    client = BoundClient(auth, selection, router_config=RouterConfig(transport=transport))
+
+    assert client.request("hi", model="grok-4").model == "xai:grok-4"
+    assert client.request("hi", model="xai:grok-4").model == "xai:grok-4"
+    for method in ("request", "plan", "complete", "stream"):
+        with pytest.raises(AuthOperationError) as info:
+            getattr(client, method)(messages="hi", model="grok-3")
+        assert info.value.reason == "selection_mismatch"
+    assert transport.requests == []
+
+
 def test_model_choices_carry_provenance_and_capability_filter(sandbox: Path) -> None:
     clock = Clock()
     auth = make_auth(sandbox, clock)
