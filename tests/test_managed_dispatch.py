@@ -82,6 +82,20 @@ def test_retained_adapter_follows_whole_local_connection(asynchronous, operation
 
 
 @pytest.mark.parametrize("asynchronous", [False, True])
+def test_retained_adapter_uses_replacement_transport(asynchronous):
+    auth = Auth.memory()
+    local(auth, "a")
+    original = transport_for("complete", asynchronous)
+    replacement = transport_for("complete", asynchronous)
+    lm = (AsyncLMRouter if asynchronous else LMRouter)(RouterConfig(auth=auth, transport=original)).lm("ollama:llama3")
+    lm.transport = replacement
+    invoke(lm, "complete", asynchronous)
+    assert original.requests == []
+    assert len(replacement.requests) == 1
+    wire_pair(replacement.requests[0], "token-a", "https://a.example/v1/chat/completions")
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
 def test_delayed_stream_never_sends_a_stale_snapshot(asynchronous):
     auth = Auth.memory()
     first = local(auth, "a")
