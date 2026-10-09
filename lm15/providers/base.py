@@ -23,6 +23,7 @@ from ..errors import (
 from ..adaptation import Adaptation, AdaptationPolicy, check_policy, collecting, is_planning
 from ..credentials import AwsCredentials, CredentialLike, CredentialValue, coerce_credential
 from ..features import EndpointSupport, ProviderManifest
+from ._managed import admit, operation, require_prepared
 from ..models import ModelInfo
 from ..protocols import LiveSession
 from ..sse import SSEEvent, parse_sse
@@ -566,6 +567,8 @@ class BaseProviderLM:
         # plan() builds and discards: no credential provider is invoked, no
         # header is signed — the record of adaptations does not depend on it.
         planning = is_planning()
+        if not planning:
+            require_prepared(self)
         credential = resolve_credential_value(self.api_key) if self.api_key is not None and not planning else None
         hdrs = dict(headers.items()) if isinstance(headers, dict) else dict(headers or [])
         if credential is not None and not isinstance(credential, AwsCredentials):
@@ -607,6 +610,7 @@ class BaseProviderLM:
                 credential=credential,
                 now=self._now(),
             )
+        req._admit = getattr(self, "_managed_admit", None) if not planning else None
         return req
 
     def _require(self, surface: str) -> None:
@@ -662,6 +666,7 @@ class BaseProviderLM:
             response = replace(response, adaptations=visible)
         return response
 
+    @operation
     def complete(self, request: Request) -> Response:
         req, adaptations = self._build(request, stream=False)
         if _client_side_stop(adaptations):
@@ -685,6 +690,7 @@ class BaseProviderLM:
             _attach_error_metadata(error, resp.headers)
             raise
 
+    @operation
     def stream(self, request: Request) -> Iterator[StreamEvent]:
         # MAP-3 (docs/mapping-rules.md): adapters may emit one end event per
         # provider terminal frame; the coalescer merges them so the public
@@ -701,6 +707,7 @@ class BaseProviderLM:
         if req is None:
             req = self.build_request(request, stream=True)
         self._ensure_transport_open()
+        admit(self, req)
         try:
             with self.transport.stream(req) as resp:
                 if resp.status >= 400:
@@ -724,6 +731,7 @@ class BaseProviderLM:
 
     def _send(self, request: TransportRequest) -> HttpResponse:
         self._ensure_transport_open()
+        admit(self, request)
         try:
             with self.transport.stream(request) as resp:
                 body = resp.read()
@@ -876,6 +884,7 @@ class BaseProviderLM:
     def _speech_generation_from_response(self, request: SpeechGenerationRequest, resp: HttpResponse) -> SpeechGenerationResponse:
         raise self._generation_unsupported("speech")
 
+    @operation
     def image_generate(self, request: ImageGenerationRequest) -> ImageGenerationResponse:
         """Generate (or, with ``request.images``, edit) images.
 
@@ -890,6 +899,7 @@ class BaseProviderLM:
             raise self._http_error(resp)
         return _parse_reply(resp, lambda reply: self._image_generation_from_response(request, reply))
 
+    @operation
     def speech_generate(self, request: SpeechGenerationRequest) -> SpeechGenerationResponse:
         """Text-to-speech.  Omitted ``voice``/``format`` mean the server's
         defaults, honestly reported in the returned part's media_type —
@@ -935,6 +945,7 @@ class BaseProviderLM:
     def _video_jobs_from_list_body(self, body: str) -> "tuple[VideoJobInfo, ...]":
         raise self._video_unsupported()
 
+    @operation
     def video_submit(self, request: VideoGenerationRequest) -> VideoJobInfo:
         """Submit a video job; returns the ticket snapshot."""
         self._require("video")
@@ -943,6 +954,7 @@ class BaseProviderLM:
             raise self._http_error(resp)
         return _parse_reply(resp, lambda reply: self._video_job_from_body(reply.text()))
 
+    @operation
     def video_status(self, video_id: str) -> VideoJobInfo:
         self._require("video")
         resp = self._send(self._video_status_request(video_id))
@@ -950,6 +962,7 @@ class BaseProviderLM:
             raise self._http_error(resp)
         return _parse_reply(resp, lambda reply: self._video_job_from_body(reply.text(), video_id))
 
+    @operation
     def video_result(self, video_id: str) -> VideoPart:
         """The finished video as a VideoPart, in the provider's own
         delivery mode (URL or bytes) — no silent re-hosting, no silent
@@ -978,6 +991,7 @@ class BaseProviderLM:
                 raise self._http_error(fetched)
         return _parse_reply(fetched or resp, lambda reply: self._video_part(status_body, fetched), json_body=False)
 
+    @operation
     def video_list(self, limit: int = 20, model: str | None = None) -> "tuple[VideoJobInfo, ...]":
         """One page of this credential's video jobs.  ``model`` is required
         on Gemini (operations list per model), ignored on OpenAI; xAI has
@@ -1026,6 +1040,7 @@ class BaseProviderLM:
     def _models_from_body(self, body: str) -> "tuple[ModelInfo, ...]":
         raise UnsupportedFeatureError(f"{self.provider}: model listing not supported", provider=self.provider)
 
+    @operation
     def list_models(self) -> "tuple[ModelInfo, ...]":
         """Fetch the models this credential can use, as canonical ModelInfo."""
         self._require("models")
@@ -1088,6 +1103,7 @@ class BaseProviderLM:
     def _batch_jobs_from_list_body(self, body: str) -> "tuple[BatchJobInfo, ...]":
         raise self._batch_unsupported()
 
+    @operation
     def batch_submit(self, request: BatchRequest) -> BatchJobInfo:
         """Submit to the provider's batch queue; returns the ticket snapshot."""
         self._require("batches")
@@ -1115,6 +1131,7 @@ class BaseProviderLM:
             raise self._http_error(resp)
         return _parse_reply(resp, lambda reply: self._batch_job_from_body(reply.text()))
 
+    @operation
     def batch_status(self, batch_id: str) -> BatchJobInfo:
         self._require("batches")
         resp = self._send(self._batch_status_request(batch_id))
@@ -1122,6 +1139,7 @@ class BaseProviderLM:
             raise self._http_error(resp)
         return _parse_reply(resp, lambda reply: self._batch_job_from_body(reply.text()))
 
+    @operation
     def batch_results(self, batch_id: str) -> "tuple[BatchEntry, ...]":
         """Entries in submission order; raises ValueError while the job runs."""
         self._require("batches")
@@ -1166,6 +1184,7 @@ class BaseProviderLM:
             raise
         return text
 
+    @operation
     def batch_cancel(self, batch_id: str) -> BatchJobInfo:
         """Request cancellation — a request, not a guarantee."""
         self._require("batches")
@@ -1174,6 +1193,7 @@ class BaseProviderLM:
             raise self._http_error(resp)
         return _parse_reply(resp, lambda reply: self._batch_job_from_body(reply.text()))
 
+    @operation
     def batch_list(self, limit: int = 20) -> "tuple[BatchJobInfo, ...]":
         """Enumerate this credential's batch jobs, newest first.
 
@@ -1249,6 +1269,7 @@ class BaseProviderLM:
         if ttl_seconds is not None and (isinstance(ttl_seconds, bool) or not isinstance(ttl_seconds, int) or ttl_seconds <= 0):
             raise ValueError("ttl_seconds must be a positive int")
 
+    @operation
     def cache_create(self, prefix: Request, *, ttl_seconds: int | None = None, label: str | None = None) -> CacheInfo:
         """Store the prefix (model, system, tools, messages) as a cache object."""
         self._require("caches")
@@ -1258,6 +1279,7 @@ class BaseProviderLM:
             raise self._http_error(resp)
         return _parse_reply(resp, lambda reply: self._cache_info_from_body(reply.text()))
 
+    @operation
     def cache_get(self, cache_id: str) -> CacheInfo:
         self._require("caches")
         resp = self._send(self._cache_get_request(cache_id))
@@ -1265,6 +1287,7 @@ class BaseProviderLM:
             raise self._http_error(resp)
         return _parse_reply(resp, lambda reply: self._cache_info_from_body(reply.text()))
 
+    @operation
     def cache_list(self, limit: int = 20, cursor: str | None = None) -> CachePage:
         self._require("caches")
         resp = self._send(self._cache_list_request(limit, cursor))
@@ -1272,6 +1295,7 @@ class BaseProviderLM:
             raise self._http_error(resp)
         return _parse_reply(resp, lambda reply: self._cache_page_from_list_body(reply.text()))
 
+    @operation
     def cache_delete(self, cache_id: str) -> None:
         """Returning without an exception IS the confirmation (the files precedent)."""
         self._require("caches")
@@ -1279,6 +1303,7 @@ class BaseProviderLM:
         if resp.status >= 400:
             raise self._http_error(resp)
 
+    @operation
     def cache_update(self, cache_id: str, *, ttl_seconds: int) -> CacheInfo:
         self._require("caches")
         if isinstance(ttl_seconds, bool) or not isinstance(ttl_seconds, int) or ttl_seconds <= 0:
@@ -1336,6 +1361,7 @@ class BaseProviderLM:
     def _file_download_request(self, file_id: str) -> TransportRequest:
         raise self._files_unsupported()
 
+    @operation
     def file_upload(self, request: FileUploadRequest) -> FileInfo:
         """Store a file with the provider; returns its canonical snapshot.
 
@@ -1349,6 +1375,7 @@ class BaseProviderLM:
             raise self._http_error(resp)
         return _parse_reply(resp, lambda reply: self._file_info_from_body(reply.text()))
 
+    @operation
     def file_get(self, file_id: str) -> FileInfo:
         self._require("files")
         resp = self._send(self._file_get_request(file_id))
@@ -1356,6 +1383,7 @@ class BaseProviderLM:
             raise self._http_error(resp)
         return _parse_reply(resp, lambda reply: self._file_info_from_body(reply.text()))
 
+    @operation
     def file_list(self, limit: int = 20, cursor: str | None = None) -> FilePage:
         """One page of this credential's stored files.
 
@@ -1369,6 +1397,7 @@ class BaseProviderLM:
             raise self._http_error(resp)
         return _parse_reply(resp, lambda reply: self._file_page_from_list_body(reply.text()))
 
+    @operation
     def file_delete(self, file_id: str) -> None:
         """Delete a stored file.  Returning without an exception IS the
         confirmation; provider acknowledgement bodies differ and carry no
@@ -1378,6 +1407,7 @@ class BaseProviderLM:
         if resp.status >= 400:
             raise self._http_error(resp)
 
+    @operation
     def file_download(self, file_id: str) -> bytes:
         """Download a file's content, when THIS file supports download.
 
@@ -1391,6 +1421,7 @@ class BaseProviderLM:
             raise self._http_error(resp)
         return resp.body
 
+    @operation
     def file_wait_ready(self, file_id: str, poll_every: float = 2.0, timeout: float | None = None) -> FileInfo:
         """Poll until the file leaves ``pending``; returns the terminal
         snapshot (``ready`` or ``failed``) — check ``readiness``, mirroring
