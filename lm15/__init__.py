@@ -65,7 +65,7 @@ from typing import TYPE_CHECKING
 from ._version import __version__
 
 if TYPE_CHECKING:
-    from .login import providers as providers
+    from .login import providers as provider_descriptors
 
 # ── Canonical types ──────────────────────────────────────────────────
 from .batch import AsyncBatchJob, BatchJob
@@ -271,8 +271,9 @@ __all__ = [
     "NotConfiguredError", "AuthOperationError", "RETRYABLE_ERRORS",
     "AccessPolicy", "EndpointSupport",
     # managed authentication (lm15.login / lm15.interactive; loaded on first use)
-    "Auth", "AsyncAuth", "BoundClient", "TerminalUI", "providers", "connect",
+    "Auth", "AsyncAuth", "BoundClient", "TerminalUI", "provider_descriptors", "connect",
     # providers
+    "providers",
     "choice", "judgments", "score", "yes_no", "data",
     "OpenAILM", "OpenAIChatLM", "AnthropicLM", "GeminiLM", "ClaudeCodeLM", "OpenAICodexLM", "XaiLM", "TypeSafeLM", "AsyncTypeSafeLM",
     "ProviderLM",
@@ -304,13 +305,10 @@ _LAZY_LOGIN = {
     "AsyncAuth": (".login", "AsyncAuth"),
     "BoundClient": (".login", "BoundClient"),
     "TerminalUI": (".login", "TerminalUI"),
-    "providers": (".login", "providers"),
+    "provider_descriptors": (".login", "providers"),
     "connect": (".interactive", "connect"),
 }
 
-# The earlier provider imports install a package attribute under this public
-# descriptor name. Let the lazy login export own it instead.
-globals().pop("providers", None)
 
 
 def __getattr__(name: str):

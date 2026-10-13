@@ -201,11 +201,19 @@ def test_construction_reads_nothing(sandbox: Path, monkeypatch: pytest.MonkeyPat
 
 
 def test_public_provider_descriptors_are_the_login_registry() -> None:
+    import importlib
+
     import lm15
 
-    assert lm15.providers is providers
-    assert lm15.providers.xai.id == "xai"
-    assert lm15.providers.openai_codex.id == "openai-codex"
+    import lm15.providers.base as base
+    import lm15.providers.openai as openai
+
+    assert lm15.provider_descriptors is providers
+    assert lm15.provider_descriptors.xai.id == "xai"
+    assert lm15.provider_descriptors.openai_codex.id == "openai-codex"
+    assert lm15.providers is importlib.import_module("lm15.providers")
+    assert base is importlib.import_module("lm15.providers.base")
+    assert openai is importlib.import_module("lm15.providers.openai")
 
 
 def test_descriptors_are_data_not_authority(sandbox: Path) -> None:
@@ -396,6 +404,69 @@ def test_replacement_is_conditional_and_old_stays_usable(sandbox: Path) -> None:
     second = auth.login("xai", "device", ui=ScriptUI(), replace=first.id)
     assert second.id != first.id and second.identity_generation == "2"
     assert auth.request_auth("xai").credential.value == f"{ACCESS}2"
+
+
+def test_replacement_does_not_retain_the_previous_host_settings(monkeypatch) -> None:
+    from lm15.login.flows.base import LoginResult
+    from lm15.login.flows.copilot import CopilotFlow
+
+    monkeypatch.setattr(CopilotFlow, "login", lambda *args, **kwargs: LoginResult(
+        material={"type": "oauth", "access": "test-token"}, label="GitHub", renewal="none"
+    ))
+    auth = Auth.memory()
+    first = auth.login("github-copilot", "device", ui=ScriptUI(), answers={"enterprise_domain": "old.example"},
+                       settings={"enterprise_domain": "old.example"}, allow_unverified=True)
+    assert first.settings["enterprise_domain"] == "old.example"
+    second = auth.login("github-copilot", "device", ui=ScriptUI(), answers={"enterprise_domain": ""},
+                        replace=first.id, allow_unverified=True)
+    assert "enterprise_domain" not in second.settings
+
+
+def test_cancelled_login_cleanup_keeps_the_new_attempt_cancellable(monkeypatch) -> None:
+    from lm15.login import manager
+
+    auth = Auth.memory()
+    events = [threading.Event(), threading.Event()]
+    entered = [threading.Event(), threading.Event()]
+    release = [threading.Event(), threading.Event()]
+    errors = []
+
+    class Flow:
+        def login(self, ctx, method, settings, answers):
+            index = 0 if ctx.cancel is events[0] else 1
+            entered[index].set()
+            assert release[index].wait(5)
+            ctx.check()
+            raise AssertionError("A cancelled login should not complete")
+
+    monkeypatch.setattr(manager, "_flow", lambda *args: Flow())
+
+    def login(index):
+        try:
+            auth.login("xai", "device", ui=ScriptUI(), cancel=events[index])
+        except BaseException as exc:
+            errors.append(exc)
+
+    first = threading.Thread(target=login, args=(0,))
+    second = threading.Thread(target=login, args=(1,))
+    first.start()
+    try:
+        assert entered[0].wait(5)
+        assert auth.cancel_login("xai") == "cancelled"
+        second.start()
+        assert entered[1].wait(5)
+        release[0].set()
+        first.join(5)
+        assert not first.is_alive()
+        assert auth.cancel_login("xai") == "cancelled"
+        assert events[1].is_set()
+    finally:
+        for signal in release:
+            signal.set()
+        first.join(5)
+        if second.ident is not None:
+            second.join(5)
+    assert len(errors) == 2 and all(isinstance(error, LoginCancelled) for error in errors)
 
 
 def test_logout_is_scoped_idempotent_and_leaves_a_marker(sandbox: Path) -> None:
