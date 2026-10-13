@@ -1143,7 +1143,7 @@ def _build_managed_lm(resolution: Resolution, config: RouterConfig, adapters: Ma
         from .cloud.hosts import resolve_settings
 
         env = config.env if config.env is not None else os.environ
-        given = (config.settings or {}).get(provider)
+        given = _settings_entry(config, provider)
         ctx = ChainContext.online(env)
         settings = resolve_settings(definition.access.host, given, env, provider=provider,
                                     profile=profile_settings(definition.access, ctx), endpoint=base_url)
@@ -1222,7 +1222,7 @@ def _build_planning_lm(resolution: Resolution, config: RouterConfig, adapters: M
         from .cloud.hosts import resolve_settings
 
         env = config.env if config.env is not None else os.environ
-        given = dict((config.settings or {}).get(resolution.provider) or {})
+        given = dict(_settings_entry(config, resolution.provider) or {})
         try:
             settings = resolve_settings(definition.access.host, given, env, provider=resolution.provider, endpoint=base_url)
         except NotConfiguredError:

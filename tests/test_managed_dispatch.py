@@ -27,6 +27,30 @@ def request(model="llama3"):
     return Request(model=model, messages=(Message.user("hi"),))
 
 
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("spelling", ["vertex-anthropic", "vertex_anthropic"])
+def test_managed_cloud_settings_use_canonical_provider_aliases(monkeypatch, asynchronous, spelling):
+    from lm15.cloud import hosts
+
+    resolve_settings = hosts.resolve_settings
+    seen = []
+
+    def resolve(host, given, *args, **kwargs):
+        seen.append(given)
+        return resolve_settings(host, given, *args, **kwargs)
+
+    monkeypatch.setattr(hosts, "resolve_settings", resolve)
+    router = (AsyncLMRouter if asynchronous else LMRouter)(RouterConfig(
+        auth=Auth.memory(), env={}, api_keys={"vertex-anthropic": "test-key"},
+        settings={spelling: {"project": "configured-project", "location": "us-central1"}},
+    ))
+    lm = router.lm("vertex-anthropic:claude-test")
+    assert lm.settings["project"] == "configured-project"
+    assert lm.settings["location"] == "us-central1"
+    router.plan(request("vertex-anthropic:claude-test"))
+    assert seen and all(given["project"] == "configured-project" for given in seen)
+
+
 def local(auth, label, *, replace=None):
     # The local recipe accepts a literal key as well as a server URL.
     return auth.configure("ollama", method="local", answers={
