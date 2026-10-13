@@ -390,7 +390,8 @@ class Auth:
             raise
         finally:
             with self._lock:
-                self._active.pop(provider, None)
+                if self._active.get(provider) is cancel:
+                    self._active.pop(provider, None)
 
     def _choose_method(self, descriptor: ProviderDescriptor, method: str | LoginMethod | None, ui: AuthUI, *,
                        allow_unverified: bool) -> LoginMethod:
@@ -512,7 +513,7 @@ class Auth:
                     reason="connection_changed", stage="persistence", commit_state="not_committed",
                     recovery="select_connection", provider=provider, attempt_id=attempt_id,
                 )
-            merged = {**slot.settings, **settings, **result.settings} if slot.connection_id else {**settings, **result.settings}
+            merged = {**settings, **result.settings}
             previous = slot.previous_ids + ((slot.connection_id,) if slot.connection_id else ())
             new = _Slot(
                 provider=provider, generation=slot.generation + 1, connection_id=connection_id, revision=1,
