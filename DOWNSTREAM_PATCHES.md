@@ -81,3 +81,21 @@ Strict offline conformance passes all six fixture/serde/doc lanes. The pinned
 mypy 2.3.1 gate checks 32 user programs with zero errors and no package-baseline
 increase. Source changes are imported through DSPy's vendoring updater; do not
 edit the packaged vendor copy by hand.
+
+### Final review corrections
+
+8. `3b4e9443700c6a8dc7b147eb4b25d5687794b79e`: use the non-colliding
+   `provider_descriptors` root export. `providers` remains the documented
+   adapter package, including dotted imports. This supersedes the namespace
+   cleanup approach in patch 5; the current tree has one descriptor registry.
+9. `9effc16c020749263c56ee9ca42385340e59d446`: merge a saved cloud connection's
+   host settings before explicit router overrides; no ambient profile may
+   silently substitute for the saved project's settings.
+10. `4fa1799346713f081aecee9570a8808f9ccc4dd4`: new/replacement connections
+    derive settings only from the new inputs/result, and an unwinding login
+    removes only its own cancellation event. Existing login/dispatch suites
+    cover host replacement, saved cloud precedence and overlapping attempts.
+
+Final validation retains zero new mypy findings and all strict offline
+conformance lanes. The public registry and adapter import surfaces coexist;
+no DSPy facade workaround is required.
