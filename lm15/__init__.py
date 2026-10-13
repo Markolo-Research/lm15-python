@@ -303,6 +303,10 @@ _LAZY_LOGIN = {
     "connect": (".interactive", "connect"),
 }
 
+# The earlier provider imports install a package attribute under this public
+# descriptor name. Let the lazy login export own it instead.
+globals().pop("providers", None)
+
 
 def __getattr__(name: str):
     target = _LAZY_LOGIN.get(name)

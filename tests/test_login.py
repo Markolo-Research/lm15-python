@@ -200,6 +200,14 @@ def test_construction_reads_nothing(sandbox: Path, monkeypatch: pytest.MonkeyPat
     assert not (sandbox / "credentials.json").exists()
 
 
+def test_public_provider_descriptors_are_the_login_registry() -> None:
+    import lm15
+
+    assert lm15.providers is providers
+    assert lm15.providers.xai.id == "xai"
+    assert lm15.providers.openai_codex.id == "openai-codex"
+
+
 def test_descriptors_are_data_not_authority(sandbox: Path) -> None:
     auth = Auth.memory()
     with pytest.raises(AttributeError):
