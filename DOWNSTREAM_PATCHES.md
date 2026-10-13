@@ -99,3 +99,12 @@ edit the packaged vendor copy by hand.
 Final validation retains zero new mypy findings and all strict offline
 conformance lanes. The public registry and adapter import surfaces coexist;
 no DSPy facade workaround is required.
+
+11. `cde858320eb066c815ddc7d5adb43605f0023180`: propagate cancellation from
+    AsyncAuth.login into its synchronous worker and join that worker. A final
+    cancellation/deadline check runs before persistence. The existing login
+    suite proves that a late grant cannot be saved after cancellation.
+
+The final source suite passes 3,719 tests (8 optional skips, the same two
+reserved-IP timeout cases deselected); all six strict conformance lanes and
+the pinned 32-program mypy gate pass with no baseline increase.
