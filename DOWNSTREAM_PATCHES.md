@@ -56,3 +56,28 @@ import. The only approved orb exceptions are the sync/async reserved-IP
 connect-timeout tests, with passing exact-release upstream CI. Do not infer
 that passing existing contract tests alone demonstrates the race regressions.
 No live provider calls are needed.
+
+## Additional Markolo DSPy integration corrections
+
+These fixes retain the v1.2.3 contract and remove regressions in its public
+provider namespace and the existing permanent underscore aliases. They are
+published only on the temporary Markolo source branch, not claimed upstream.
+
+5. `50aa5998339e3a56fce50e562827949354f7ed3f`: release the transport-package
+   collision so the lazy root `providers` export returns the managed registry.
+   Existing `tests/test_login.py` owns the public descriptor regression.
+6. `9f7f97236a687565bec3475b75ef8b1b6a57496e`: use `_settings_entry` in managed
+   dispatch and planning, keeping supplied underscore-spelled cloud settings
+   ahead of profile/environment defaults. Sync/async regressions in
+   `tests/test_managed_dispatch.py` cover both accepted spellings and planning.
+7. `3d07d52f7bc0b40f556d7c6a26321d6625975012`: declare the root registry export
+   for type checkers without loading login eagerly. The existing strict user
+   authentication example now checks the same public descriptor API.
+
+The new regressions fail on the pristine imported patch stack and pass with
+these corrections. Validation: 3,712 source tests pass, 8 optional tests skip,
+and the two previously documented orb reserved-IP timeout cases are deselected.
+Strict offline conformance passes all six fixture/serde/doc lanes. The pinned
+mypy 2.3.1 gate checks 32 user programs with zero errors and no package-baseline
+increase. Source changes are imported through DSPy's vendoring updater; do not
+edit the packaged vendor copy by hand.
