@@ -469,6 +469,48 @@ def test_cancelled_login_cleanup_keeps_the_new_attempt_cancellable(monkeypatch) 
     assert len(errors) == 2 and all(isinstance(error, LoginCancelled) for error in errors)
 
 
+@pytest.mark.asyncio
+async def test_async_login_cancellation_prevents_late_connection_persistence(monkeypatch) -> None:
+    import asyncio
+
+    from lm15.login import AsyncAuth, manager
+    from lm15.login.flows.base import LoginResult
+
+    auth = AsyncAuth.memory()
+    entered, release, finished, cancel = (threading.Event() for _ in range(4))
+
+    class Flow:
+        def login(self, ctx, method, settings, answers):
+            entered.set()
+            assert release.wait(5)
+            return LoginResult(material={"type": "oauth", "access": "test-token"}, label="late grant", renewal="none")
+
+    monkeypatch.setattr(manager, "_flow", lambda *args: Flow())
+    login = auth.sync.login
+
+    def tracked_login(*args, **kwargs):
+        try:
+            return login(*args, **kwargs)
+        finally:
+            finished.set()
+
+    monkeypatch.setattr(auth.sync, "login", tracked_login)
+    task = asyncio.create_task(auth.login("xai", "device", ui=ScriptUI(), cancel=cancel))
+    try:
+        assert await asyncio.to_thread(entered.wait, 5)
+        task.cancel()
+        await asyncio.sleep(0)
+        assert cancel.is_set()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert finished.is_set()
+        assert auth.sync.status("xai").presence == "absent"
+    finally:
+        release.set()
+        assert await asyncio.to_thread(finished.wait, 5)
+
+
 def test_logout_is_scoped_idempotent_and_leaves_a_marker(sandbox: Path) -> None:
     clock = Clock()
     auth = make_auth(sandbox, clock)

@@ -349,6 +349,7 @@ class Auth:
             flow = _flow(provider, chosen.id)
             try:
                 result = flow.login(ctx, chosen, settings, answers)
+                ctx.check()
             except LoginCancelled:
                 self._release(provider, attempt_id)
                 raise
@@ -973,7 +974,25 @@ class AsyncAuth:
         return await self._run(self.sync.status, provider)
 
     async def login(self, provider: str, method: Any = None, **kwargs: Any):
-        return await self._run(self.sync.login, provider, method, **kwargs)
+        import asyncio
+
+        cancel = kwargs.get("cancel") or threading.Event()
+        kwargs["cancel"] = cancel
+        worker = asyncio.create_task(self._run(self.sync.login, provider, method, **kwargs))
+        try:
+            return await asyncio.shield(worker)
+        except asyncio.CancelledError:
+            cancel.set()
+            while not worker.done():
+                try:
+                    await asyncio.shield(worker)
+                except asyncio.CancelledError:
+                    cancel.set()
+                except (LoginCancelled, LM15Error):
+                    break
+            if worker.done() and not worker.cancelled():
+                worker.exception()
+            raise
 
     async def set_api_key(self, provider: str, key: str, **kwargs: Any):
         return await self._run(self.sync.set_api_key, provider, key, **kwargs)
