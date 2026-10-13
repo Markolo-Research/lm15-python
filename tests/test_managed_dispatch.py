@@ -51,6 +51,24 @@ def test_managed_cloud_settings_use_canonical_provider_aliases(monkeypatch, asyn
     assert seen and all(given["project"] == "configured-project" for given in seen)
 
 
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("override", [False, True])
+def test_managed_cloud_connection_retains_saved_host_settings(monkeypatch, asynchronous, override):
+    from lm15.cloud import chains
+
+    monkeypatch.setattr(chains, "credential_provider", lambda *args, **kwargs: "test-key")
+    monkeypatch.setattr(chains, "profile_settings", lambda *args, **kwargs: {})
+    auth = Auth.memory()
+    auth.configure("vertex-anthropic", method="cloud", answers={"named": "environment"},
+                   settings={"project": "saved-project", "location": "us-central1"})
+    explicit = {"vertex_anthropic": {"project": "explicit-project"}} if override else {}
+    lm = (AsyncLMRouter if asynchronous else LMRouter)(RouterConfig(auth=auth, env={}, settings=explicit)).lm(
+        "vertex-anthropic:claude-test"
+    )
+    assert lm.settings["project"] == ("explicit-project" if override else "saved-project")
+    assert lm.settings["location"] == "us-central1"
+
+
 def local(auth, label, *, replace=None):
     # The local recipe accepts a literal key as well as a server URL.
     return auth.configure("ollama", method="local", answers={

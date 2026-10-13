@@ -1090,6 +1090,7 @@ def _build_managed_lm(resolution: Resolution, config: RouterConfig, adapters: Ma
     a keyless local server's placeholder.  Never an environment key, a
     foreign CLI file or the machine's cloud chain."""
     from .login.manager import Auth, _RequestSnapshot
+    from .login.types import Connection
 
     auth: Auth = config.auth  # type: ignore[assignment]
     provider = resolution.provider
@@ -1099,6 +1100,7 @@ def _build_managed_lm(resolution: Resolution, config: RouterConfig, adapters: Ma
     named = _credentials_entry(config, provider)
     origin: str | None = None
     account_id: str | None = None
+    connection: Connection | None = None
     if not explicit and named is None:
         try:
             saved = snapshot if snapshot is not None else auth.request_auth(provider)
@@ -1143,7 +1145,8 @@ def _build_managed_lm(resolution: Resolution, config: RouterConfig, adapters: Ma
         from .cloud.hosts import resolve_settings
 
         env = config.env if config.env is not None else os.environ
-        given = _settings_entry(config, provider)
+        given = dict(connection.settings) if connection is not None else {}
+        given.update(_settings_entry(config, provider) or {})
         ctx = ChainContext.online(env)
         settings = resolve_settings(definition.access.host, given, env, provider=provider,
                                     profile=profile_settings(definition.access, ctx), endpoint=base_url)
