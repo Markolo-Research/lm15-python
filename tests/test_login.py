@@ -1229,3 +1229,41 @@ def test_cancel_between_reservation_and_login_return_signals_event(monkeypatch):
     assert ui.prompts == []
     assert not auth._active
     assert auth.status("groq").presence == "absent"
+
+
+@pytest.mark.asyncio
+async def test_repeated_async_cancel_waits_for_reservation_cleanup(monkeypatch):
+    import asyncio
+    from lm15.login import AsyncAuth
+
+    auth = AsyncAuth.memory()
+    prompted, release_prompt, cleanup_started, allow_cleanup = (threading.Event() for _ in range(4))
+    original = auth.sync._release
+
+    class BlockingUI(ScriptUI):
+        def prompt(self, prompt):
+            prompted.set()
+            assert release_prompt.wait(5)
+            return "test-key"
+
+    def delayed_release(*args):
+        cleanup_started.set()
+        assert allow_cleanup.wait(5)
+        return original(*args)
+
+    monkeypatch.setattr(auth.sync, "_release", delayed_release)
+    task = asyncio.create_task(auth.login("groq", "api_key", ui=BlockingUI()))
+    try:
+        assert await asyncio.to_thread(prompted.wait, 5)
+        task.cancel()
+        assert await asyncio.to_thread(cleanup_started.wait, 5)
+        task.cancel()
+        await asyncio.sleep(0)
+        assert not task.done()
+        allow_cleanup.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 1)
+        assert not auth.sync.store.read()["_lm15"]["slots"]["groq"].get("attempt")
+    finally:
+        allow_cleanup.set()
+        release_prompt.set()

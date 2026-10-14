@@ -1028,7 +1028,15 @@ class AsyncAuth:
             cancel.set()
             # Invalidate only this reservation; a synchronous prompt may never return.
             worker.add_done_callback(lambda task: None if task.cancelled() else task.exception())
-            await self._run(self.sync._release, self.sync.descriptor(provider).id, attempt_id)
+            cleanup = asyncio.create_task(
+                self._run(self.sync._release, self.sync.descriptor(provider).id, attempt_id)
+            )
+            while True:
+                try:
+                    await asyncio.shield(cleanup)
+                    break
+                except asyncio.CancelledError:
+                    continue  # Repeated cancellation must not outpace durable cleanup.
             raise
 
     async def set_api_key(self, provider: str, key: str, **kwargs: Any):
