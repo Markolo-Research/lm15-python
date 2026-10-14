@@ -1389,3 +1389,40 @@ def test_configure_cleanup_does_not_mask_commit_error(monkeypatch):
     with pytest.raises(AuthOperationError) as caught:
         auth.set_api_key("groq", "test-key")
     assert caught.value is original
+
+
+@pytest.mark.asyncio
+async def test_native_cancel_after_commit_admission_preserves_committed_connection(monkeypatch):
+    import asyncio
+    from lm15.login import AsyncAuth
+
+    auth = AsyncAuth.memory()
+    admitted, allow_write = threading.Event(), threading.Event()
+    mutate = auth.sync.store.mutate
+
+    def pause_before_write(fn):
+        if fn.__name__ != "commit":
+            return mutate(fn)
+
+        def paused(document):
+            replacement = fn(document)
+            admitted.set()
+            assert allow_write.wait(5)
+            return replacement
+
+        return mutate(paused)
+
+    monkeypatch.setattr(auth.sync.store, "mutate", pause_before_write)
+    task = asyncio.create_task(auth.login("groq", "api_key", ui=ScriptUI(), answers={"key": "test-key"}))
+    try:
+        assert await asyncio.to_thread(admitted.wait, 5)
+        task.cancel()
+        await asyncio.sleep(0)
+        allow_write.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 1)
+        # AUTH-19: native cancellation can lose result delivery after commit wins.
+        assert auth.sync.status("groq").presence == "saved"
+        assert auth.sync.cancel_login("groq") == "complete"
+    finally:
+        allow_write.set()
