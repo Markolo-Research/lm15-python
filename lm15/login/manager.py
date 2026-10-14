@@ -488,7 +488,7 @@ class Auth:
         slot, _ = self._view(document, provider)
         return slot.generation
 
-    def _release(self, provider: str, attempt_id: str) -> None:
+    def _release(self, provider: str, attempt_id: str, *, suppress_errors: bool = True) -> None:
         def release(document: dict[str, Any]) -> dict[str, Any] | None:
             slot, material = self._view(document, provider)
             if not slot.attempt or slot.attempt.get("id") != attempt_id:
@@ -499,7 +499,9 @@ class Auth:
         try:
             self.store.mutate(release)
         except LM15Error:
-            pass  # releasing a reservation must not mask the real failure
+            if not suppress_errors:
+                raise
+            # Best-effort cleanup must not mask an earlier login failure.
 
     def _commit(self, provider: str, attempt_id: str, expected: int, method: LoginMethod, result: Any,
                 settings: dict[str, str], *, cancel: threading.Event | None = None) -> Connection:
@@ -1023,13 +1025,12 @@ class AsyncAuth:
         # An uninterruptible terminal prompt must not hold asyncio.run() shutdown.
         threading.Thread(target=run_login, daemon=True, name="lm15-login").start()
         try:
-            return await asyncio.shield(worker)
+            return await worker
         except asyncio.CancelledError:
             cancel.set()
             # Invalidate only this reservation; a synchronous prompt may never return.
-            worker.add_done_callback(lambda task: None if task.cancelled() else task.exception())
             cleanup = asyncio.create_task(
-                self._run(self.sync._release, self.sync.descriptor(provider).id, attempt_id)
+                self._run(self.sync._release, self.sync.descriptor(provider).id, attempt_id, suppress_errors=False)
             )
             while True:
                 try:

@@ -1246,10 +1246,10 @@ async def test_repeated_async_cancel_waits_for_reservation_cleanup(monkeypatch):
             assert release_prompt.wait(5)
             return "test-key"
 
-    def delayed_release(*args):
+    def delayed_release(*args, **kwargs):
         cleanup_started.set()
         assert allow_cleanup.wait(5)
-        return original(*args)
+        return original(*args, **kwargs)
 
     monkeypatch.setattr(auth.sync, "_release", delayed_release)
     task = asyncio.create_task(auth.login("groq", "api_key", ui=BlockingUI()))
@@ -1267,3 +1267,80 @@ async def test_repeated_async_cancel_waits_for_reservation_cleanup(monkeypatch):
     finally:
         allow_cleanup.set()
         release_prompt.set()
+
+
+@pytest.mark.asyncio
+async def test_async_cancel_surfaces_reservation_cleanup_failure(monkeypatch):
+    import asyncio
+    from lm15.login import AsyncAuth
+
+    auth = AsyncAuth.memory()
+    prompted, release_prompt = threading.Event(), threading.Event()
+    mutate = auth.sync.store.mutate
+
+    class BlockingUI(ScriptUI):
+        def prompt(self, prompt):
+            prompted.set()
+            assert release_prompt.wait(5)
+            return "test-key"
+
+    def failing_release(fn):
+        if fn.__name__ == "release":
+            raise AuthOperationError("cleanup write failed", reason="storage_unavailable")
+        return mutate(fn)
+
+    monkeypatch.setattr(auth.sync.store, "mutate", failing_release)
+    task = asyncio.create_task(auth.login("groq", "api_key", ui=BlockingUI()))
+    try:
+        assert await asyncio.to_thread(prompted.wait, 5)
+        task.cancel()
+        with pytest.raises(AuthOperationError) as caught:
+            await asyncio.wait_for(task, 1)
+        assert caught.value.reason == "storage_unavailable"
+        assert auth.sync.store.read()["_lm15"]["slots"]["groq"].get("attempt")
+    finally:
+        release_prompt.set()
+
+
+@pytest.mark.asyncio
+async def test_cancelled_daemon_result_does_not_log_expected_exception(monkeypatch):
+    import asyncio
+    from lm15.login import AsyncAuth
+
+    auth = AsyncAuth.memory()
+    prompted, release_prompt = threading.Event(), threading.Event()
+    loop = asyncio.get_running_loop()
+    delivered = asyncio.Event()
+    errors = []
+    previous_handler = loop.get_exception_handler()
+    schedule = loop.call_soon_threadsafe
+
+    def tracked_schedule(callback, *args, **kwargs):
+        if getattr(callback, "__name__", "") == "deliver":
+            def deliver_and_signal():
+                callback(*args)
+                delivered.set()
+            return schedule(deliver_and_signal, **kwargs)
+        return schedule(callback, *args, **kwargs)
+
+    class BlockingUI(ScriptUI):
+        def prompt(self, prompt):
+            prompted.set()
+            assert release_prompt.wait(5)
+            return "test-key"
+
+    monkeypatch.setattr(loop, "call_soon_threadsafe", tracked_schedule)
+    loop.set_exception_handler(lambda loop, context: errors.append(context))
+    task = asyncio.create_task(auth.login("groq", "api_key", ui=BlockingUI()))
+    try:
+        assert await asyncio.to_thread(prompted.wait, 5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        release_prompt.set()
+        await asyncio.wait_for(delivered.wait(), 1)
+        await asyncio.sleep(0)
+        assert errors == []
+    finally:
+        release_prompt.set()
+        loop.set_exception_handler(previous_handler)
