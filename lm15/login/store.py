@@ -112,6 +112,8 @@ def validate_document(data: Any, *, where: str) -> Document:
                     int(0 if value is None else value)
                 if slot.get("settings") is not None and not isinstance(slot["settings"], dict):
                     raise ValueError("settings must be an object")
+                if any(not isinstance(value, str) for value in (slot.get("settings") or {}).values()):
+                    raise ValueError("settings values must be strings")
                 for field in ("routes", "previous_ids"):
                     if slot.get(field) is not None and not isinstance(slot[field], (list, tuple)):
                         raise ValueError(f"{field} must be a sequence")

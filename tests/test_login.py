@@ -1027,6 +1027,7 @@ def test_external_claude_cli_source_reads_in_place(sandbox: Path, monkeypatch: p
 
 @pytest.mark.parametrize(("field", "value"), [
     ("generation", "bad"), ("revision", []), ("settings", 1),
+    ("settings", {"project": ["bad"], "location": "us-central1"}),
     ("routes", 1), ("attempt", "bad"),
     ("verification", {}), ("verification", {"foo": "bar"}),
     ("verification", {"result": "invalid"}), ("verification", {"result": []}),
