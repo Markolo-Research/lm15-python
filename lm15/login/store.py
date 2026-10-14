@@ -104,6 +104,21 @@ def validate_document(data: Any, *, where: str) -> Document:
         slots = meta.get("slots", {})
         if not isinstance(slots, dict) or any(not isinstance(v, dict) for v in slots.values()):
             raise _storage_error(f"Credential store at {where} has malformed slot metadata; not touching it.")
+        for slot in slots.values():
+            try:
+                for field in ("generation", "revision"):
+                    value = slot.get(field)
+                    int(0 if value is None else value)
+                if slot.get("settings") is not None and not isinstance(slot["settings"], dict):
+                    raise ValueError("settings must be an object")
+                for field in ("routes", "previous_ids"):
+                    if slot.get(field) is not None and not isinstance(slot[field], (list, tuple)):
+                        raise ValueError(f"{field} must be a sequence")
+                for field in ("attempt", "verification", "renewal_in_flight"):
+                    if slot.get(field) is not None and not isinstance(slot[field], dict):
+                        raise ValueError(f"{field} must be an object")
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise _storage_error(f"Credential store at {where} has malformed slot fields; not touching it.") from exc
     for key, value in data.items():
         if key != META_KEY and not isinstance(value, dict):
             raise _storage_error(f"Credential store at {where}: entry {key!r} is not an object; not touching it.")

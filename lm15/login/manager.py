@@ -306,6 +306,7 @@ class Auth:
         cancel: threading.Event | None = None,
         lifetime_s: float = ATTEMPT_LIFETIME_S,
         allow_unverified: bool = False,
+        _attempt_id: str | None = None,
     ) -> Connection:
         """Run one login to completion and save the connection.
 
@@ -328,7 +329,7 @@ class Auth:
         deadline = self._monotonic() + float(lifetime_s)
         ctx = LoginContext(ui=ui, deadline=deadline, cancel=cancel, provider=provider, clock=self._monotonic,
                            wall_clock=self._clock, opener=self._opener, sleep=self._sleep)
-        attempt_id = f"at_{secrets.token_urlsafe(16)}"
+        attempt_id = _attempt_id or f"at_{secrets.token_urlsafe(16)}"
         # Reservation (AUTH-17/18): storage proven writable, one active
         # attempt per slot, generation observed — before any browser opens.
         self.store.reserve()
@@ -336,6 +337,7 @@ class Auth:
         with self._lock:
             self._active[provider] = cancel
         try:
+            ctx.check()
             for field_ in chosen.fields:
                 if field_.id not in answers:
                     if not field_.required and field_.type != "select":
@@ -380,7 +382,7 @@ class Auth:
             except LM15Error:
                 self._release(provider, attempt_id)
                 raise
-            return self._commit(provider, attempt_id, expected, chosen, result, settings)
+            return self._commit(provider, attempt_id, expected, chosen, result, settings, cancel=cancel)
         except BaseException:
             # Any exit without a saved connection ends the attempt — Ctrl-C
             # (a notebook's cancel) while waiting on the provider or at a
@@ -495,12 +497,14 @@ class Auth:
             pass  # releasing a reservation must not mask the real failure
 
     def _commit(self, provider: str, attempt_id: str, expected: int, method: LoginMethod, result: Any,
-                settings: dict[str, str]) -> Connection:
+                settings: dict[str, str], *, cancel: threading.Event | None = None) -> Connection:
         created = _now_iso(self._clock)
         connection_id = f"cn_{secrets.token_urlsafe(12)}"
         routes = tuple(self.descriptor(provider).routes) or (provider,)
 
         def commit(document: dict[str, Any]) -> dict[str, Any] | None:
+            if cancel is not None and cancel.is_set():
+                raise LoginCancelled()
             slot, _material = self._view(document, provider)
             if not slot.attempt or slot.attempt.get("id") != attempt_id:
                 raise AuthOperationError(
@@ -554,15 +558,15 @@ class Auth:
             if not slot.attempt:
                 outcome["result"] = "complete" if slot.connection_id else "none"
                 return None
+            with self._lock:
+                event = self._active.get(provider)
+            if event is not None:
+                event.set()
             slot.attempt = None
             outcome["result"] = "cancelled"
             return self._put(document, slot, material)
 
-        self.store.mutate(cancel)  # the durable record first (AUTH-19) …
-        with self._lock:
-            event = self._active.get(provider)
-        if event is not None:
-            event.set()  # … then the running attempt in this process
+        self.store.mutate(cancel)  # Signal the captured attempt while its reservation is locked.
         return outcome["result"]
 
     # ─── setup without a provider round-trip (AUTH-17) ─────────────────
@@ -695,7 +699,15 @@ class Auth:
         config = router_config or RouterConfig()
         from dataclasses import replace as _replace
 
-        router = LMRouter(_replace(config, auth=self))
+        connection = self.status(provider).connection
+        from .bound import pinned_auth
+        from .types import ModelSelection
+
+        checked_auth = self if connection is None else pinned_auth(self, ModelSelection(
+            provider=provider, model="verify", connection_id=connection.id,
+            identity_generation=connection.identity_generation,
+        ))
+        router = LMRouter(_replace(config, auth=checked_auth))
         checked = _now_iso(self._clock)
         try:
             lm = router.lm(f"{provider}:verify")
@@ -705,13 +717,13 @@ class Auth:
             result = Verification(result="rejected", checked_at=checked, check="models", detail=exc.code)
         finally:
             router.close()
-        self._record_verification(provider, result)
+        self._record_verification(provider, result, connection)
         return result
 
-    def _record_verification(self, provider: str, result: Verification) -> None:
+    def _record_verification(self, provider: str, result: Verification, checked: Connection | None) -> None:
         def record(document: dict[str, Any]) -> dict[str, Any] | None:
             slot, material = self._view(document, provider)
-            if slot.connection_id is None:
+            if checked is None or (slot.connection_id, str(slot.generation)) != (checked.id, checked.identity_generation):
                 return None
             slot.verification = {"result": result.result, "checked_at": result.checked_at, "check": result.check,
                                  "detail": result.detail}
@@ -978,20 +990,16 @@ class AsyncAuth:
 
         cancel = kwargs.get("cancel") or threading.Event()
         kwargs["cancel"] = cancel
+        attempt_id = f"at_{secrets.token_urlsafe(16)}"
+        kwargs["_attempt_id"] = attempt_id
         worker = asyncio.create_task(self._run(self.sync.login, provider, method, **kwargs))
         try:
             return await asyncio.shield(worker)
         except asyncio.CancelledError:
             cancel.set()
-            while not worker.done():
-                try:
-                    await asyncio.shield(worker)
-                except asyncio.CancelledError:
-                    cancel.set()
-                except (LoginCancelled, LM15Error):
-                    break
-            if worker.done() and not worker.cancelled():
-                worker.exception()
+            # Invalidate only this reservation; a synchronous prompt may never return.
+            worker.add_done_callback(lambda task: None if task.cancelled() else task.exception())
+            await self._run(self.sync._release, self.sync.descriptor(provider).id, attempt_id)
             raise
 
     async def set_api_key(self, provider: str, key: str, **kwargs: Any):

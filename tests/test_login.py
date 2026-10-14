@@ -504,7 +504,7 @@ async def test_async_login_cancellation_prevents_late_connection_persistence(mon
         release.set()
         with pytest.raises(asyncio.CancelledError):
             await task
-        assert finished.is_set()
+        assert await asyncio.to_thread(finished.wait, 5)
         assert auth.sync.status("xai").presence == "absent"
     finally:
         release.set()
@@ -1023,3 +1023,118 @@ def test_external_claude_cli_source_reads_in_place(sandbox: Path, monkeypatch: p
     assert auth.request_auth("claude-code").credential.value == ACCESS
     auth.logout("claude-code")
     assert json.loads(claude.read_text(encoding="utf-8"))["claudeAiOauth"]["accessToken"] == ACCESS  # the tool's file is untouched
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("generation", "bad"), ("revision", []), ("settings", 1),
+    ("routes", 1), ("attempt", "bad"),
+])
+def test_malformed_slot_fields_raise_storage_error(sandbox, field, value):
+    path = sandbox / "credentials.json"
+    data = {"_lm15": {"version": 1, "slots": {"groq": {field: value}}}}
+    original = json.dumps(data)
+    path.write_text(original)
+    auth = Auth.local(path)
+    for inspect in (lambda: auth.status("groq"), auth.connections):
+        with pytest.raises(AuthOperationError) as caught:
+            inspect()
+        assert caught.value.reason == "storage_unavailable"
+    assert path.read_text() == original
+
+
+def test_cancel_signals_original_event_before_new_attempt(monkeypatch):
+    auth = Auth.memory()
+    first, second = threading.Event(), threading.Event()
+    auth._reserve("xai", "first", None, 900)
+    auth._active["xai"] = first
+    mutate = auth.store.mutate
+
+    def replacement_after_unlock(fn):
+        result = mutate(fn)
+        auth._active["xai"] = second
+        return result
+
+    monkeypatch.setattr(auth.store, "mutate", replacement_after_unlock)
+    assert auth.cancel_login("xai") == "cancelled"
+    assert first.is_set()
+    assert not second.is_set()
+
+
+def test_cancel_is_checked_inside_commit_transaction(monkeypatch):
+    auth = Auth.memory()
+    cancel = threading.Event()
+    mutate = auth.store.mutate
+
+    def cancel_before_commit(fn):
+        if fn.__name__ == "commit":
+            cancel.set()
+        return mutate(fn)
+
+    monkeypatch.setattr(auth.store, "mutate", cancel_before_commit)
+    with pytest.raises(LoginCancelled):
+        auth.login("groq", "api_key", ui=ScriptUI(), answers={"key": "test-key"}, cancel=cancel)
+    assert auth.status("groq").presence == "absent"
+
+
+def test_verification_does_not_mark_replacement_connection(monkeypatch):
+    from lm15 import router as router_module
+
+    auth = Auth.memory()
+    original = auth.set_api_key("groq", "old-test-key")
+
+    class Router:
+        def __init__(self, config):
+            pass
+
+        def lm(self, model):
+            return self
+
+        def list_models(self):
+            auth.set_api_key("groq", "new-test-key", replace=original.id)
+            return []
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(router_module, "LMRouter", Router)
+    assert auth.verify("groq").result == "valid"
+    record = auth.store.read()["_lm15"]["slots"]["groq"]
+    assert record["connection_id"] != original.id
+    assert "verification" not in record
+
+
+@pytest.mark.asyncio
+async def test_async_cancel_returns_while_prompt_is_blocked():
+    import asyncio
+    from lm15.login import AsyncAuth
+
+    auth = AsyncAuth.memory()
+    entered, release, finished = (threading.Event() for _ in range(3))
+
+    class BlockingUI(ScriptUI):
+        def prompt(self, prompt):
+            entered.set()
+            assert release.wait(5)
+            return "test-key"
+
+    original = auth.sync.login
+
+    def tracked(*args, **kwargs):
+        try:
+            return original(*args, **kwargs)
+        finally:
+            finished.set()
+
+    auth.sync.login = tracked
+    task = asyncio.create_task(auth.login("groq", "api_key", ui=BlockingUI()))
+    try:
+        assert await asyncio.to_thread(entered.wait, 5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 1)
+        assert not finished.is_set()
+        assert not auth.sync.store.read().get("_lm15", {}).get("slots", {}).get("groq", {}).get("attempt")
+    finally:
+        release.set()
+        assert await asyncio.to_thread(finished.wait, 5)
+    assert auth.sync.status("groq").presence == "absent"
