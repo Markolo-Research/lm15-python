@@ -1038,13 +1038,13 @@ def test_malformed_slot_fields_raise_storage_error(sandbox, field, value):
     path = sandbox / "credentials.json"
     data = {"_lm15": {"version": 1, "slots": {"groq": {field: value}}}}
     original = json.dumps(data)
-    path.write_text(original)
+    path.write_text(original, encoding="utf-8")
     auth = Auth.local(path)
     for inspect in (lambda: auth.status("groq"), auth.connections):
         with pytest.raises(AuthOperationError) as caught:
             inspect()
         assert caught.value.reason == "storage_unavailable"
-    assert path.read_text() == original
+    assert path.read_text(encoding="utf-8") == original
 
 
 def test_cancel_signals_original_event_before_new_attempt(monkeypatch):
@@ -1178,7 +1178,7 @@ async def main():
 asyncio.run(main())
 print("shutdown completed")
 """
-    result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=5)
+    result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, encoding="utf-8", timeout=5)
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "shutdown completed"
 
