@@ -333,7 +333,7 @@ class Auth:
         # Reservation (AUTH-17/18): storage proven writable, one active
         # attempt per slot, generation observed — before any browser opens.
         self.store.reserve()
-        expected = self._reserve(provider, attempt_id, replace, lifetime_s)
+        expected = self._reserve(provider, attempt_id, replace, lifetime_s, cancel=cancel)
         with self._lock:
             self._active[provider] = cancel
         try:
@@ -444,12 +444,15 @@ class Auth:
             reason="invalid_login_state", stage="interaction", recovery="choose_method", provider=descriptor.id,
         )
 
-    def _reserve(self, provider: str, attempt_id: str, replace: str | None, lifetime_s: float) -> int:
+    def _reserve(self, provider: str, attempt_id: str, replace: str | None, lifetime_s: float,
+                 *, cancel: threading.Event | None = None) -> int:
         """Reserve the slot's single active attempt; return the generation
         the commit must find."""
         now = self._clock()
 
         def reserve(document: dict[str, Any]) -> dict[str, Any] | None:
+            if cancel is not None and cancel.is_set():
+                raise LoginCancelled()
             slot, material = self._view(document, provider)
             pending = slot.attempt
             if pending and pending.get("id") != attempt_id:

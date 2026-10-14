@@ -1178,3 +1178,35 @@ print("shutdown completed")
     result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=5)
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "shutdown completed"
+
+
+@pytest.mark.asyncio
+async def test_async_cancel_prevents_late_reservation(monkeypatch):
+    import asyncio
+    from lm15.login import AsyncAuth
+
+    auth = AsyncAuth.memory()
+    entered, release, finished = (threading.Event() for _ in range(3))
+    original = auth.sync._reserve
+
+    def delayed_reserve(*args, **kwargs):
+        entered.set()
+        assert release.wait(5)
+        try:
+            return original(*args, **kwargs)
+        finally:
+            finished.set()
+
+    monkeypatch.setattr(auth.sync, "_reserve", delayed_reserve)
+    task = asyncio.create_task(auth.login("groq", "api_key", ui=ScriptUI(), answers={"key": "test-key"}))
+    try:
+        assert await asyncio.to_thread(entered.wait, 5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 1)
+        assert not auth.sync.store.read().get("_lm15", {}).get("slots", {}).get("groq", {}).get("attempt")
+    finally:
+        release.set()
+        assert await asyncio.to_thread(finished.wait, 5)
+    assert not auth.sync.store.read().get("_lm15", {}).get("slots", {}).get("groq", {}).get("attempt")
+    assert auth.sync.status("groq").presence == "absent"
