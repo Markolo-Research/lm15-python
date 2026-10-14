@@ -8,8 +8,8 @@ Same quality bar as the API-key siblings (test_providers.py):
 - build_request is pure (no sockets), MAP-2/MAP-3 hold on synthetic bodies;
 - AuthError guidance says how to re-login, not which env var to set;
 - async mirrors match the sync constructor surface;
-- ONE tiny live smoke per provider, skipped unless local credentials exist
-  and are fresh.
+- ONE tiny live smoke per provider, requiring explicit opt-in, an explicit
+  model and fresh local credentials; collection never reads credentials.
 """
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ import base64
 import dataclasses
 import inspect
 import json
+import os
 import socket
 import time
 from pathlib import Path
@@ -560,30 +561,45 @@ def test_async_mirror_inner_adapter_never_touches_network(tmp_path) -> None:
         async_lm._inner.complete(Request(model="m", messages=(Message.user("hi"),)))
 
 
-# ─── live smokes: one tiny call each, skipped without fresh creds ────
+# ─── live smokes: explicit opt-in and model, never enabled by credentials ────
 
 
-def _fresh(read, *args) -> bool:
+def _live_model(model_env: str, read) -> str:
+    if os.environ.get("LM15_RUN_LIVE_TESTS") != "1":
+        pytest.skip("set LM15_RUN_LIVE_TESTS=1 to opt into live requests")
+    model = os.environ.get(model_env, "").strip()
+    if not model:
+        pytest.skip(f"set {model_env} explicitly for this live request")
     try:
-        credential = read(*args)
+        credential = read()
     except Exception:
-        return False
-    return credential is not None and not credential.expired
+        pytest.skip("no fresh local credential")
+    if credential is None or credential.expired:
+        pytest.skip("no fresh local credential")
+    return model
 
 
-_CLAUDE_LIVE = Path.home() / ".claude" / ".credentials.json"
-_CODEX_LIVE = Path.home() / ".codex" / "auth.json"
+@pytest.mark.parametrize(("opt_in", "model"), [(None, None), (None, "selected-model"), ("0", "selected-model"), ("1", None)])
+def test_live_smoke_requires_explicit_opt_in_and_model(monkeypatch, opt_in, model):
+    for key, value in (("LM15_RUN_LIVE_TESTS", opt_in), ("LM15_CODEX_LIVE_MODEL", model)):
+        if value is None:
+            monkeypatch.delenv(key, raising=False)
+        else:
+            monkeypatch.setenv(key, value)
+
+    def forbidden_read():
+        pytest.fail("credentials must not be read before explicit opt-in and model")
+
+    with pytest.raises(pytest.skip.Exception):
+        _live_model("LM15_CODEX_LIVE_MODEL", forbidden_read)
 
 
-@pytest.mark.skipif(
-    not (_CLAUDE_LIVE.exists() and _fresh(read_claude_code_credential)),
-    reason="no fresh ~/.claude/.credentials.json",
-)
 def test_live_claude_code_smoke() -> None:
+    model = _live_model("LM15_CLAUDE_LIVE_MODEL", read_claude_code_credential)
     lm = ClaudeCodeLM()
     response = lm.complete(
         Request(
-            model="claude-haiku-4-5",
+            model=model,
             messages=(Message.user("Reply with the single word: ok"),),
             config=Config(max_tokens=16),
         )
@@ -592,15 +608,12 @@ def test_live_claude_code_smoke() -> None:
     assert response.usage is not None and response.usage.output_tokens > 0
 
 
-@pytest.mark.skipif(
-    not (_CODEX_LIVE.exists() and _fresh(read_codex_cli_credential)),
-    reason="no fresh ~/.codex/auth.json",
-)
 def test_live_openai_codex_smoke() -> None:
+    model = _live_model("LM15_CODEX_LIVE_MODEL", read_codex_cli_credential)
     lm = OpenAICodexLM()
     response = lm.complete(
         Request(
-            model="gpt-5.5",
+            model=model,
             messages=(Message.user("Reply with the single word: ok"),),
         )
     )
