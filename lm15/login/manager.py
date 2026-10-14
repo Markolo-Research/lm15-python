@@ -992,7 +992,31 @@ class AsyncAuth:
         kwargs["cancel"] = cancel
         attempt_id = f"at_{secrets.token_urlsafe(16)}"
         kwargs["_attempt_id"] = attempt_id
-        worker = asyncio.create_task(self._run(self.sync.login, provider, method, **kwargs))
+        loop = asyncio.get_running_loop()
+        worker = loop.create_future()
+
+        def deliver(result: Any = None, error: BaseException | None = None) -> None:
+            if worker.done():
+                return
+            if error is None:
+                worker.set_result(result)
+            else:
+                worker.set_exception(error)
+
+        def run_login() -> None:
+            result: Any = None
+            error: BaseException | None = None
+            try:
+                result = self.sync.login(provider, method, **kwargs)
+            except BaseException as exc:
+                error = exc
+            try:
+                loop.call_soon_threadsafe(deliver, result, error)
+            except RuntimeError:
+                pass  # The loop closed after cancellation; no result can be delivered.
+
+        # An uninterruptible terminal prompt must not hold asyncio.run() shutdown.
+        threading.Thread(target=run_login, daemon=True, name="lm15-login").start()
         try:
             return await asyncio.shield(worker)
         except asyncio.CancelledError:

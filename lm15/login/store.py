@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import os
 import threading
 from pathlib import Path
@@ -117,6 +118,15 @@ def validate_document(data: Any, *, where: str) -> Document:
                 for field in ("attempt", "verification", "renewal_in_flight"):
                     if slot.get(field) is not None and not isinstance(slot[field], dict):
                         raise ValueError(f"{field} must be an object")
+                attempt = slot.get("attempt")
+                if attempt:
+                    if not isinstance(attempt.get("id"), str) or not attempt["id"]:
+                        raise ValueError("attempt id must be a nonempty string")
+                    for field, default in (("started_at_s", 0), ("lifetime_s", 900)):
+                        if not math.isfinite(float(attempt.get(field, default))):
+                            raise ValueError(f"{field} must be finite")
+                    if "expected_generation" in attempt:
+                        int(attempt["expected_generation"])
             except (TypeError, ValueError, OverflowError) as exc:
                 raise _storage_error(f"Credential store at {where} has malformed slot fields; not touching it.") from exc
     for key, value in data.items():

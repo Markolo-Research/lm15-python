@@ -1028,6 +1028,8 @@ def test_external_claude_cli_source_reads_in_place(sandbox: Path, monkeypatch: p
 @pytest.mark.parametrize(("field", "value"), [
     ("generation", "bad"), ("revision", []), ("settings", 1),
     ("routes", 1), ("attempt", "bad"),
+    ("attempt", {"id": "old", "started_at_s": "bad", "lifetime_s": 900}),
+    ("attempt", {"id": "old", "started_at_s": 0, "lifetime_s": "bad"}),
 ])
 def test_malformed_slot_fields_raise_storage_error(sandbox, field, value):
     path = sandbox / "credentials.json"
@@ -1138,3 +1140,41 @@ async def test_async_cancel_returns_while_prompt_is_blocked():
         release.set()
         assert await asyncio.to_thread(finished.wait, 5)
     assert auth.sync.status("groq").presence == "absent"
+
+
+def test_cancelled_prompt_does_not_hold_asyncio_run_shutdown():
+    import subprocess
+    import sys
+
+    script = """
+import asyncio
+import threading
+from lm15.login import AsyncAuth
+
+entered = threading.Event()
+
+class BlockingUI:
+    def prompt(self, prompt):
+        entered.set()
+        threading.Event().wait()
+    def notify(self, notice):
+        pass
+
+async def main():
+    auth = AsyncAuth.memory()
+    task = asyncio.create_task(auth.login("groq", "api_key", ui=BlockingUI()))
+    while not entered.is_set():
+        await asyncio.sleep(0.01)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    assert not auth.sync.store.read()["_lm15"]["slots"]["groq"].get("attempt")
+
+asyncio.run(main())
+print("shutdown completed")
+"""
+    result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=5)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "shutdown completed"
