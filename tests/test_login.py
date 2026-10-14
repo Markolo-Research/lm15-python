@@ -1028,6 +1028,9 @@ def test_external_claude_cli_source_reads_in_place(sandbox: Path, monkeypatch: p
 @pytest.mark.parametrize(("field", "value"), [
     ("generation", "bad"), ("revision", []), ("settings", 1),
     ("routes", 1), ("attempt", "bad"),
+    ("verification", {}), ("verification", {"foo": "bar"}),
+    ("verification", {"result": "invalid"}), ("verification", {"result": []}),
+    ("verification", {"result": "valid", "detail": 1}),
     ("attempt", {"id": "old", "started_at_s": "bad", "lifetime_s": 900}),
     ("attempt", {"id": "old", "started_at_s": 0, "lifetime_s": "bad"}),
 ])
@@ -1344,3 +1347,44 @@ async def test_cancelled_daemon_result_does_not_log_expected_exception(monkeypat
     finally:
         release_prompt.set()
         loop.set_exception_handler(previous_handler)
+
+
+def test_configure_commit_failure_releases_reservation_for_retry(monkeypatch):
+    auth = Auth.memory()
+    mutate = auth.store.mutate
+    fail_once = True
+
+    def fail_commit(fn):
+        nonlocal fail_once
+        if fn.__name__ == "commit" and fail_once:
+            fail_once = False
+            raise AuthOperationError("commit write failed", reason="storage_unavailable")
+        return mutate(fn)
+
+    monkeypatch.setattr(auth.store, "mutate", fail_commit)
+    with pytest.raises(AuthOperationError) as caught:
+        auth.set_api_key("groq", "test-key")
+    assert caught.value.reason == "storage_unavailable"
+    assert not auth.store.read()["_lm15"]["slots"]["groq"].get("attempt")
+    assert auth.set_api_key("groq", "test-key").provider == "groq"
+
+
+def test_configure_cleanup_does_not_mask_commit_error(monkeypatch):
+    auth = Auth.memory()
+    original = AuthOperationError("original commit failure", reason="storage_unavailable")
+
+    def fail_commit(*args, **kwargs):
+        raise original
+
+    mutate = auth.store.mutate
+
+    def fail_cleanup(fn):
+        if fn.__name__ == "release":
+            raise AuthOperationError("cleanup failure", reason="storage_unavailable")
+        return mutate(fn)
+
+    monkeypatch.setattr(auth, "_commit", fail_commit)
+    monkeypatch.setattr(auth.store, "mutate", fail_cleanup)
+    with pytest.raises(AuthOperationError) as caught:
+        auth.set_api_key("groq", "test-key")
+    assert caught.value is original

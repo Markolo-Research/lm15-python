@@ -616,19 +616,19 @@ class Auth:
                 )
         attempt_id = f"at_{secrets.token_urlsafe(16)}"
         self.store.reserve()
-        expected = self._reserve(provider, attempt_id, replace, 60.0)
-        ctx = LoginContext(ui=_NoUI(), deadline=self._monotonic() + 60.0, provider=provider,
-                           clock=self._monotonic, wall_clock=self._clock, opener=self._opener)
         try:
-            result = _flow(provider, method).login(ctx, chosen, settings, answers)
-        except LoginDenied as exc:
-            self._release(provider, attempt_id)
-            raise AuthOperationError(f"{provider}: {exc}", reason="login_denied", stage="interaction",
-                                     recovery="provide_input", provider=provider) from None
-        except LM15Error:
+            expected = self._reserve(provider, attempt_id, replace, 60.0)
+            ctx = LoginContext(ui=_NoUI(), deadline=self._monotonic() + 60.0, provider=provider,
+                               clock=self._monotonic, wall_clock=self._clock, opener=self._opener)
+            try:
+                result = _flow(provider, method).login(ctx, chosen, settings, answers)
+            except LoginDenied as exc:
+                raise AuthOperationError(f"{provider}: {exc}", reason="login_denied", stage="interaction",
+                                         recovery="provide_input", provider=provider) from None
+            return self._commit(provider, attempt_id, expected, chosen, result, settings)
+        except BaseException:
             self._release(provider, attempt_id)
             raise
-        return self._commit(provider, attempt_id, expected, chosen, result, settings)
 
     # ─── logout (AUTH-19) ──────────────────────────────────────────────
 

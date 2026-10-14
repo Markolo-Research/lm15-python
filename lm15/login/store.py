@@ -118,6 +118,15 @@ def validate_document(data: Any, *, where: str) -> Document:
                 for field in ("attempt", "verification", "renewal_in_flight"):
                     if slot.get(field) is not None and not isinstance(slot[field], dict):
                         raise ValueError(f"{field} must be an object")
+                verification = slot.get("verification")
+                if verification is not None:
+                    if set(verification) - {"result", "checked_at", "check", "detail"}:
+                        raise ValueError("unknown verification fields")
+                    if verification.get("result") not in ("valid", "rejected", "unverified"):
+                        raise ValueError("invalid verification result")
+                    for field in ("checked_at", "check", "detail"):
+                        if verification.get(field) is not None and not isinstance(verification[field], str):
+                            raise ValueError(f"{field} must be a string")
                 attempt = slot.get("attempt")
                 if attempt:
                     if not isinstance(attempt.get("id"), str) or not attempt["id"]:
