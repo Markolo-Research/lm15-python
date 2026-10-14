@@ -333,10 +333,8 @@ class Auth:
         # Reservation (AUTH-17/18): storage proven writable, one active
         # attempt per slot, generation observed — before any browser opens.
         self.store.reserve()
-        expected = self._reserve(provider, attempt_id, replace, lifetime_s, cancel=cancel)
-        with self._lock:
-            self._active[provider] = cancel
         try:
+            expected = self._reserve(provider, attempt_id, replace, lifetime_s, cancel=cancel)
             ctx.check()
             for field_ in chosen.fields:
                 if field_.id not in answers:
@@ -480,6 +478,10 @@ class Auth:
                 )
             slot.attempt = {"id": attempt_id, "expected_generation": str(slot.generation),
                             "started_at_s": now, "lifetime_s": float(lifetime_s)}
+            # Publish the local event under the same store lock as its reservation.
+            if cancel is not None:
+                with self._lock:
+                    self._active[provider] = cancel
             return self._put(document, slot, material)
 
         document = self.store.mutate(reserve)

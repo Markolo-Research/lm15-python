@@ -1210,3 +1210,22 @@ async def test_async_cancel_prevents_late_reservation(monkeypatch):
         assert await asyncio.to_thread(finished.wait, 5)
     assert not auth.sync.store.read().get("_lm15", {}).get("slots", {}).get("groq", {}).get("attempt")
     assert auth.sync.status("groq").presence == "absent"
+
+
+def test_cancel_between_reservation_and_login_return_signals_event(monkeypatch):
+    auth = Auth.memory()
+    mutate = auth.store.mutate
+    ui = ScriptUI()
+
+    def cancel_after_reserve(fn):
+        result = mutate(fn)
+        if fn.__name__ == "reserve":
+            assert auth.cancel_login("groq") == "cancelled"
+        return result
+
+    monkeypatch.setattr(auth.store, "mutate", cancel_after_reserve)
+    with pytest.raises(LoginCancelled):
+        auth.login("groq", "api_key", ui=ui)
+    assert ui.prompts == []
+    assert not auth._active
+    assert auth.status("groq").presence == "absent"
