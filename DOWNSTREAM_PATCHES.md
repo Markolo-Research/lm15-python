@@ -160,6 +160,9 @@ the pinned 32-program mypy gate pass with no baseline increase.
     transport detachment and close through repeated cancellation, then propagate
     cancellation after cleanup completes.
 
+30a. `40996bdd556901b062a9b6845929cde4bc18521d`: correct no-home portability
+     fixtures for POSIX passwd fallback; replay between patches 30 and 31.
+
 31. `e098f5bdfda19b132a8909d1ed128d26f20c4371`: retain and drain initial
     async adapter construction through repeated cancellation before propagating
     native cancellation to the caller.

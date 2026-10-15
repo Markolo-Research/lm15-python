@@ -2031,6 +2031,7 @@ async def test_owned_admission_drains_before_cancellation():
 @pytest.mark.parametrize("custom", [
     {"type": "api_key", "key": "custom-test-key"},
     {"type": "custom-scheme", "payload": {"account": "test"}},
+    "opaque", ["opaque"], None, 42,
 ])
 def test_managed_store_preserves_unrelated_provider_entries(sandbox, custom):
     path = sandbox / "credentials.json"
