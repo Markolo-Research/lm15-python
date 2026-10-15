@@ -147,7 +147,7 @@ def validate_document(data: Any, *, where: str) -> Document:
                         if verification.get(field) is not None and not isinstance(verification[field], str):
                             raise ValueError(f"{field} must be a string")
                 attempt = slot.get("attempt")
-                if attempt:
+                if attempt is not None:
                     if not isinstance(attempt.get("id"), str) or not attempt["id"]:
                         raise ValueError("attempt id must be a nonempty string")
                     for field, default in (("started_at_s", 0), ("lifetime_s", 900)):
