@@ -172,7 +172,10 @@ the pinned 32-program mypy gate pass with no baseline increase.
 34. `d10a00595cc8a80fed1866c18bc8ef36afa22406`: preserve generic construction
     result typing and normalize whitespace.
 
-Patches 12–34 are ordered descendants of patch 11 and must be replayed too.
+35. `d1fdef4e419b2275ba963635affde2eea1b3c703`: keep read-only async status
+    and connections promptly cancellable while mutating workers remain drained.
+
+Patches 12–35 are ordered descendants of patch 11 and must be replayed too.
 The earlier suite counts above describe historical intermediate stacks.
 At patch 24, strict offline login/subscription validation passed 113 tests,
 with two live tests excluded, zero external network attempts, zero new typing
@@ -218,3 +221,7 @@ and the contract harness pass (1,904 cases, 56 fixture skips). The original
 451-finding package typing baseline is unchanged; 32 user examples are clean.
 Catalog replacement and saved-identity override regressions are included.
 No provider calls were made.
+
+At patch 35, 3,816 offline and 356 focused tests pass, including both read-only
+cancellation regressions (red on parent). Mutation draining remains covered.
+Strict checks, unchanged typing baseline and all 1,904 harness cases pass.
