@@ -83,7 +83,7 @@ def model_choices(
 
         selection = ModelSelection(provider=connection.provider, model="catalog", connection_id=connection.id,
                                    identity_generation=connection.identity_generation)
-        config = replace(router_config or RouterConfig(), auth=pinned_auth(auth, selection))
+        config = replace(router_config or RouterConfig(), auth=pinned_auth(auth, selection), api_keys=None, credentials=None)
         router = LMRouter(config)
         try:
             lm = router.lm(f"{connection.provider}:catalog")
@@ -143,7 +143,7 @@ class BoundClient:
         base = router_config if router_config is not None else RouterConfig()
         if base.auth is not None and base.auth is not auth:
             raise ValueError("router_config.auth must be this client's Auth or None")
-        self._router = LMRouter(replace(base, auth=pinned_auth(auth, selection)))
+        self._router = LMRouter(replace(base, auth=pinned_auth(auth, selection), api_keys=None, credentials=None))
 
     def __repr__(self) -> str:
         return f"BoundClient({self.selection.routed!r}, connection={self.selection.connection_id!r})"

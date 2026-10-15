@@ -714,7 +714,7 @@ class Auth:
             provider=provider, model="verify", connection_id=connection.id,
             identity_generation=connection.identity_generation,
         ))
-        router = LMRouter(_replace(config, auth=checked_auth))
+        router = LMRouter(_replace(config, auth=checked_auth, api_keys=None, credentials=None))
         checked = _now_iso(self._clock)
         try:
             lm = router.lm(f"{provider}:verify")
@@ -984,7 +984,18 @@ class AsyncAuth:
         import asyncio
         import functools
 
-        return await asyncio.to_thread(functools.partial(fn, *args, **kwargs))
+        worker = asyncio.create_task(asyncio.to_thread(functools.partial(fn, *args, **kwargs)))
+        cancellation = None
+        while not worker.done():
+            try:
+                await asyncio.wait({worker})
+            except asyncio.CancelledError as exc:
+                cancellation = exc
+        if cancellation is not None:
+            if not worker.cancelled():
+                worker.exception()
+            raise cancellation
+        return worker.result()
 
     async def connections(self):
         return await self._run(self.sync.connections)
@@ -1073,3 +1084,4 @@ class AsyncAuth:
 
     async def __aexit__(self, *_exc: Any) -> None:
         self.close()
+

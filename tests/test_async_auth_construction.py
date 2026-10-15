@@ -171,7 +171,8 @@ async def test_cancelled_close_finishes_cleanup(during_close):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure", [False, True])
-async def test_cancelled_construction_is_drained(failure, monkeypatch):
+@pytest.mark.parametrize("operation", ["canonical", "openai_complete", "openai_stream"])
+async def test_cancelled_construction_is_drained(failure, monkeypatch, operation):
     router = AsyncLMRouter()
     entered, release, finished = threading.Event(), threading.Event(), threading.Event()
 
@@ -184,7 +185,20 @@ async def test_cancelled_construction_is_drained(failure, monkeypatch):
         return object()
 
     monkeypatch.setattr(router, "lm", construct)
-    operation = asyncio.create_task(router._alm("groq:test"))
+    operation_name = operation
+
+    async def invoke():
+        if operation_name == "canonical":
+            return await router._alm("groq:test")
+        if operation_name == "openai_complete":
+            return await router.complete_from_openai_chat("groq:test", [])
+        stream = router.stream_from_openai_chat("groq:test", [])
+        try:
+            return await anext(stream)
+        finally:
+            await stream.aclose()
+
+    operation = asyncio.create_task(invoke())
     try:
         assert await asyncio.to_thread(entered.wait, 1)
         operation.cancel()

@@ -1592,9 +1592,12 @@ class AsyncLMRouter:
         return lm
 
     async def _alm(self, model: str):
+        return await self._construct(self.lm, model)
+
+    async def _construct(self, fn, *args, **kwargs):
         import asyncio
 
-        construction = asyncio.create_task(asyncio.to_thread(self.lm, model))
+        construction = asyncio.create_task(asyncio.to_thread(fn, *args, **kwargs))
         cancellation = None
         while not construction.done():
             try:
@@ -1653,17 +1656,13 @@ class AsyncLMRouter:
         """
         if not isinstance(stream, bool):
             raise TypeError("stream must be a boolean")
-        import asyncio
-
-        request, lm = await asyncio.to_thread(self.request_from_openai_chat, model, messages, **kwargs)
+        request, lm = await self._construct(self.request_from_openai_chat, model, messages, **kwargs)
         if stream:
             return AsyncResponseStream(lm.stream(request), request)
         return await lm.complete(request)
 
     async def stream_from_openai_chat(self, model: str, messages: object, /, **kwargs) -> AsyncIterator[StreamEvent]:
-        import asyncio
-
-        request, lm = await asyncio.to_thread(self.request_from_openai_chat, model, messages, **kwargs)
+        request, lm = await self._construct(self.request_from_openai_chat, model, messages, **kwargs)
         stream = lm.stream(request)
         try:
             async for event in stream:
@@ -1672,3 +1671,4 @@ class AsyncLMRouter:
             close = getattr(stream, "aclose", None)
             if callable(close):
                 await close()
+

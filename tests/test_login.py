@@ -1614,3 +1614,94 @@ def test_canonical_provider_settings_win_independent_of_insertion_order(canonica
         "project": "canonical-project"
     }
 
+
+
+@pytest.mark.parametrize("method", ["bound", "verify", "catalog"])
+@pytest.mark.parametrize("override", ["api_keys", "credentials"])
+def test_saved_identity_ignores_router_credential_overrides(method, override):
+    from lm15.features import NAMED_CREDENTIALS
+
+    auth = Auth.memory()
+    connection = auth.set_api_key("groq", "saved-test-key")
+    transport = FakeTransport([_chat_reply("ok") if method == "bound" else _models_reply()])
+    value = "other-test-key" if override == "api_keys" else next(iter(NAMED_CREDENTIALS))
+    config = RouterConfig(transport=transport, **{override: {"groq": value}})
+    if method == "bound":
+        selection = ModelSelection(provider="groq", model="test", connection_id=connection.id,
+                                   identity_generation=connection.identity_generation)
+        client = BoundClient(auth, selection, router_config=config)
+        try:
+            assert client.complete(messages="hi").text == "ok"
+            auth.logout("groq")
+            with pytest.raises(AuthOperationError):
+                client.complete(messages="hi")
+        finally:
+            client.close()
+    elif method == "verify":
+        assert auth.verify("groq", router_config=config).result == "valid"
+    else:
+        model_choices(auth, "groq", refresh=True, router_config=config)
+    assert len(transport.requests) == 1
+    assert dict(transport.requests[0].headers)["Authorization"] == "Bearer saved-test-key"
+
+
+@pytest.mark.parametrize("provider,material", [
+    ("openrouter", {"type": "oauth", "access": "test"}),
+    ("groq", {"type": "oauth", "access": "test"}),
+    ("xai", {"type": "api_key", "key": "test", "minted": True}),
+    ("groq", {"type": "local"}),
+    ("groq", {"type": "cloud", "named": "adc"}),
+])
+def test_provider_incompatible_material_is_storage_error(sandbox, provider, material):
+    path = sandbox / "credentials.json"
+    original = json.dumps({provider: material})
+    path.write_text(original, encoding="utf-8")
+    auth = Auth.local(path)
+    for inspect in (lambda: auth.status(provider), auth.connections, lambda: auth.request_auth(provider)):
+        with pytest.raises(AuthOperationError) as caught:
+            inspect()
+        assert caught.value.reason == "storage_unavailable"
+    assert path.read_text(encoding="utf-8") == original
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", [False, True])
+async def test_cancelled_async_mutation_is_drained(monkeypatch, failure):
+    import asyncio
+    from lm15.login import AsyncAuth
+
+    auth = AsyncAuth.memory()
+    auth.sync.set_api_key("groq", "test-key")
+    original = auth.sync.logout
+    entered, release, finished = threading.Event(), threading.Event(), threading.Event()
+
+    def logout(provider):
+        entered.set()
+        assert release.wait(3)
+        try:
+            if failure:
+                raise ValueError("mutation failed")
+            return original(provider)
+        finally:
+            finished.set()
+
+    monkeypatch.setattr(auth.sync, "logout", logout)
+    operation = asyncio.create_task(auth.logout("groq"))
+    try:
+        assert await asyncio.to_thread(entered.wait, 1)
+        operation.cancel()
+        await asyncio.sleep(0.02)
+        operation.cancel()
+        await asyncio.sleep(0.02)
+        assert not operation.done()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await operation
+        assert finished.is_set()
+        assert (auth.sync.status("groq").presence == "absent") is (not failure)
+    finally:
+        release.set()
+        try:
+            await operation
+        except asyncio.CancelledError:
+            pass

@@ -149,6 +149,10 @@ def validate_document(data: Any, *, where: str) -> Document:
         kind = value.get("type")
         if not isinstance(kind, str) or kind not in {"api_key", "env", "external", "cloud", "local", "oauth"}:
             raise _storage_error(f"Credential store at {where}: entry {key!r} has an unknown material type; not touching it.")
+        from .flows import accepts_material
+
+        if not accepts_material(key, value):
+            raise _storage_error(f"Credential store at {where}: entry {key!r} has incompatible material; not touching it.")
         # Validate recipe inputs without probing external sources or reading secrets.
         required = {"api_key": "key", "env": "name", "external": "source", "cloud": "named", "oauth": "access"}
         recipe_field = required.get(kind) if isinstance(kind, str) else None
@@ -360,3 +364,4 @@ def _reject_duplicate_members(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
             raise ValueError(f"duplicate member {key!r}")
         result[key] = value
     return result
+
