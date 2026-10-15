@@ -198,7 +198,10 @@ the pinned 32-program mypy gate pass with no baseline increase.
 44. `225d1aaa6388ad61b6d89e9c1707fd9b59e7b9cf`: reject boolean stored attempt
     start timestamps before interpreting reservation age.
 
-Patches 12–44 are ordered descendants of patch 11 and must be replayed too.
+45. `d33218f802c66c163837dae682450a07da0aa8ef`: reject nonfinite login
+    lifetimes, stop queued logins after Auth closure, and drain managed admission.
+
+Patches 12–45 are ordered descendants of patch 11 and must be replayed too.
 The earlier suite counts above describe historical intermediate stacks.
 At patch 24, strict offline login/subscription validation passed 113 tests,
 with two live tests excluded, zero external network attempts, zero new typing
@@ -275,3 +278,9 @@ At patch 44, both timestamp regressions fail on parent and pass on candidate,
 preserving stored bytes. Full offline: 3,843 passed, two Windows skips and seven
 live exclusions. Focused: 383 passed; malformed-slot controls: 26 passed.
 Unchanged typing, strict conformance, signatures and 1,904 contract checks pass.
+
+At patch 45, 12 supplied regressions and 17 independent probes pass, including
+real complete/send and stream preparation/admission cancellation with worker
+errors. Full offline: 3,848 passed, two Windows skips and seven live exclusions;
+focused: 388 passed. Typing remains unchanged; strict checks and 1,904 contract
+cases pass. Cancelled calls send nothing; no provider calls were made.
