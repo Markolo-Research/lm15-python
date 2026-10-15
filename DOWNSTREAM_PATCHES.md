@@ -160,7 +160,11 @@ the pinned 32-program mypy gate pass with no baseline increase.
     transport detachment and close through repeated cancellation, then propagate
     cancellation after cleanup completes.
 
-Patches 12–30 are ordered descendants of patch 11 and must be replayed too.
+31. `e098f5bdfda19b132a8909d1ed128d26f20c4371`: retain and drain initial
+    async adapter construction through repeated cancellation before propagating
+    native cancellation to the caller.
+
+Patches 12–31 are ordered descendants of patch 11 and must be replayed too.
 The earlier suite counts above describe historical intermediate stacks.
 At patch 24, strict offline login/subscription validation passed 113 tests,
 with two live tests excluded, zero external network attempts, zero new typing
@@ -193,3 +197,9 @@ At patch 30, 334 offline async/login/router tests and eight focused async tests
 pass. Both cancellation regressions fail on the prior base. Three live tests
 remain excluded; 32 typing examples are clean and the package baseline is
 unchanged. No live provider calls were made.
+
+At patch 31, 3,796 full offline tests pass, with two Windows-only skips and
+seven live exclusions. Ten focused async cases, all six strict conformance
+checks, signatures, typing and the contract harness pass on macOS/Python 3.12.
+The no-home fixture correction is commit 40996bdd556901b062a9b6845929cde4bc18521d.
+No provider calls were made.
