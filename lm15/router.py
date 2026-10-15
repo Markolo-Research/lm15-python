@@ -76,7 +76,7 @@ import os
 import threading
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
-from typing import AsyncIterator, Iterator, Literal, Mapping, overload
+from typing import AsyncIterator, Callable, Iterator, Literal, Mapping, ParamSpec, TypeVar, overload
 
 from .result import AsyncResponseStream, ResponseStream
 
@@ -107,6 +107,10 @@ __all__ = [
     "openai_chat_model_string",
     "AsyncLMRouter",
 ]
+
+
+_P = ParamSpec("_P")
+_T = TypeVar("_T")
 
 
 # ---------------------------------------------------------------- rules ----
@@ -1594,7 +1598,7 @@ class AsyncLMRouter:
     async def _alm(self, model: str):
         return await self._construct(self.lm, model)
 
-    async def _construct(self, fn, *args, **kwargs):
+    async def _construct(self, fn: Callable[_P, _T], *args: _P.args, **kwargs: _P.kwargs) -> _T:
         import asyncio
 
         construction = asyncio.create_task(asyncio.to_thread(fn, *args, **kwargs))
@@ -1671,4 +1675,3 @@ class AsyncLMRouter:
             close = getattr(stream, "aclose", None)
             if callable(close):
                 await close()
-

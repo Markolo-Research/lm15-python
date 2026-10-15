@@ -1084,4 +1084,3 @@ class AsyncAuth:
 
     async def __aexit__(self, *_exc: Any) -> None:
         self.close()
-

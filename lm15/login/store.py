@@ -364,4 +364,3 @@ def _reject_duplicate_members(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
             raise ValueError(f"duplicate member {key!r}")
         result[key] = value
     return result
-

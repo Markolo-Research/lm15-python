@@ -221,4 +221,3 @@ class BoundClient:
 
     def __exit__(self, *_exc: Any) -> None:
         self.close()
-
