@@ -181,7 +181,14 @@ the pinned 32-program mypy gate pass with no baseline increase.
 37. `6124527c510ba9369e9c816ad168653be9db8861`: bound daemon read workers
     across instances and loops; require positive, non-boolean attempt lifetimes.
 
-Patches 12–37 are ordered descendants of patch 11 and must be replayed too.
+38. `64fdd2d20d51f9cea1fee461fe613967a1ed824e`: bound abandoned login workers
+    across instances and loops with a separate cancellable capacity gate.
+39. `a76f58f405555c11e2f6ccb13dcfb730921f8de2`: preserve caller context variables
+    in daemon read and login workers.
+40. `55f020806da908ad4a3712b6c079713c47235a12`: supply the required test UI
+    in the bounded-login recovery fixture.
+
+Patches 12–40 are ordered descendants of patch 11 and must be replayed too.
 The earlier suite counts above describe historical intermediate stacks.
 At patch 24, strict offline login/subscription validation passed 113 tests,
 with two live tests excluded, zero external network attempts, zero new typing
@@ -240,3 +247,9 @@ At patch 37, 3,830 offline and 370 focused tests pass. Cross-loop blocked reads
 stay at four workers while the parent grows from eight to sixteen. Cancellation,
 capacity recovery and start-failure release pass. Strict checks, unchanged typing
 and 1,904 contract-harness cases pass without provider calls.
+
+At patch 40, 3,834 full offline tests pass, with two Windows-only skips and
+seven live exclusions. Bounded login recovery and three caller-context
+regressions pass. Strict conformance, signatures and all 1,904 contract-harness
+cases pass (56 fixture skips). The 451-finding package typing baseline remains
+unchanged and all 32 user examples are clean. No provider calls were made.
