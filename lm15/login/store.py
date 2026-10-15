@@ -147,10 +147,24 @@ def validate_document(data: Any, *, where: str) -> Document:
             raise _storage_error(f"Credential store at {where}: entry {key!r} is not an object; not touching it.")
         kind = value.get("type")
         # Validate recipe inputs without probing external sources or reading secrets.
-        required = {"api_key": "key", "env": "name", "external": "source", "cloud": "named"}
+        required = {"api_key": "key", "env": "name", "external": "source", "cloud": "named", "oauth": "access"}
         recipe_field = required.get(kind) if isinstance(kind, str) else None
         if recipe_field and (not isinstance(value.get(recipe_field), str) or not value[recipe_field].strip()):
             raise _storage_error(f"Credential store at {where}: entry {key!r} has malformed recipe material; not touching it.")
+        if kind == "oauth":
+            invalid_strings = any(
+                field in value and (not isinstance(value[field], str) or not value[field].strip())
+                for field in ("refresh", "accountId")
+            )
+            invalid_times = any(
+                field in value and (
+                    isinstance(value[field], bool) or not isinstance(value[field], (int, float))
+                    or not math.isfinite(value[field])
+                )
+                for field in ("expires", "issued_at", "lifetime_s")
+            )
+            if invalid_strings or invalid_times:
+                raise _storage_error(f"Credential store at {where}: entry {key!r} has malformed OAuth material; not touching it.")
         if kind == "local" and any(
             name in value and not isinstance(value[name], str) for name in ("key", "base_url")
         ):

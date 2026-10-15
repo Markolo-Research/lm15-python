@@ -1448,3 +1448,30 @@ def test_malformed_recipe_material_raises_storage_error(sandbox, material):
             inspect()
         assert caught.value.reason == "storage_unavailable"
     assert path.read_text(encoding="utf-8") == original
+
+
+@pytest.mark.parametrize("material", [
+    {"type": "oauth"}, {"type": "oauth", "access": []}, {"type": "oauth", "access": " "},
+    {"type": "oauth", "access": "test-token", "refresh": {}},
+    {"type": "oauth", "access": "test-token", "accountId": []},
+    {"type": "oauth", "access": "test-token", "expires": float("nan")},
+    {"type": "oauth", "access": "test-token", "issued_at": True},
+    {"type": "oauth", "access": "test-token", "lifetime_s": "3600"},
+])
+def test_malformed_oauth_material_raises_storage_error(sandbox, material):
+    path = sandbox / "credentials.json"
+    original = json.dumps({"xai": material})
+    path.write_text(original, encoding="utf-8")
+    auth = Auth.local(path)
+    for inspect in (lambda: auth.status("xai"), auth.connections, lambda: auth.request_auth("xai")):
+        with pytest.raises(AuthOperationError) as caught:
+            inspect()
+        assert caught.value.reason == "storage_unavailable"
+    assert path.read_text(encoding="utf-8") == original
+
+
+def test_oauth_material_without_optional_fields_is_valid():
+    from lm15.login.store import validate_document
+
+    document = {"xai": {"type": "oauth", "access": "test-token"}}
+    assert validate_document(document, where="test") == document
