@@ -421,3 +421,19 @@ def test_managed_local_placeholder_observes_later_configuration(asynchronous):
         invoke(lm, "complete", asynchronous)
     assert error.value.reason == "login_required"
     assert len(transport.requests) == 2
+
+
+@pytest.mark.parametrize("change", ["configure", "logout"])
+def test_prepared_local_placeholder_rejects_scope_change(change):
+    auth = Auth.memory()
+    transport = FakeTransport([_chat_reply()])
+    router = LMRouter(RouterConfig(auth=auth, transport=transport, env={}))
+    prepared = router.lm("ollama:llama3")._managed_prepare()
+    if change == "configure":
+        local(auth, "configured")
+    else:
+        auth.logout("ollama")
+    with pytest.raises(AuthOperationError) as error:
+        prepared.complete(request())
+    assert error.value.reason == ("connection_changed" if change == "configure" else "login_required")
+    assert transport.requests == []

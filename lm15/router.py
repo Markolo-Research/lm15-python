@@ -1199,9 +1199,12 @@ def _build_managed_lm(resolution: Resolution, config: RouterConfig, adapters: Ma
                 )
             lm._managed_prepare = prepare
             inner._managed_prepare = prepare
-        elif saved is not None:
+        else:
             def admission():
-                auth._admit(saved)
+                if saved is not None:
+                    auth._admit(saved)
+                else:
+                    auth._admit_placeholder(provider)
             lm._managed_admit = admission
             inner._managed_admit = admission
     return lm

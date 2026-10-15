@@ -835,6 +835,21 @@ class Auth:
             self._check_selected(connection.provider, slot, material,
                                  (connection.id, connection.identity_generation))
 
+    def _admit_placeholder(self, provider: str) -> None:
+        """Admit a keyless local request only while its scope remains unconfigured."""
+        with self.store.transaction() as txn:
+            slot, material = self._view(txn.read(), provider)
+            if slot.logged_out:
+                raise AuthOperationError(
+                    f"{provider}: signed out before local dispatch", reason="login_required",
+                    stage="resolution", recovery="restart_login", provider=provider,
+                )
+            if slot.connection_id is not None or material is not None:
+                raise AuthOperationError(
+                    f"{provider}: a connection was configured before local dispatch", reason="connection_changed",
+                    stage="resolution", recovery="select_connection", provider=provider,
+                )
+
     def _renew(self, provider: str, pinned: tuple[str, str] | None) -> RequestAuth:
         """AUTH-20.4: lock, re-read, reuse a sibling's fresh result, else
         mark in-flight, exchange, write — all under the lock."""
