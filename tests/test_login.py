@@ -1054,6 +1054,7 @@ def test_external_claude_cli_source_reads_in_place(sandbox: Path, monkeypatch: p
     ("verification", {"result": "invalid"}), ("verification", {"result": []}),
     ("verification", {"result": "valid", "detail": 1}),
     ("attempt", {"id": "old", "started_at_s": "bad", "lifetime_s": 900}),
+    *[("attempt", {"id": "old", "started_at_s": value, "lifetime_s": 900}) for value in (True, False)],
     ("attempt", {"id": "old", "started_at_s": 0, "lifetime_s": "bad"}),
     *[("attempt", {"id": "old", "started_at_s": 0, "lifetime_s": value}) for value in (0, -1, False)],
 ])

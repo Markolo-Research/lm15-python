@@ -140,7 +140,7 @@ def validate_document(data: Any, *, where: str) -> Document:
                     if not isinstance(attempt.get("id"), str) or not attempt["id"]:
                         raise ValueError("attempt id must be a nonempty string")
                     for field, default in (("started_at_s", 0), ("lifetime_s", 900)):
-                        if not math.isfinite(float(attempt.get(field, default))):
+                        if isinstance(attempt.get(field, default), bool) or not math.isfinite(float(attempt.get(field, default))):
                             raise ValueError(f"{field} must be finite")
                     lifetime = attempt.get("lifetime_s", 900)
                     if isinstance(lifetime, bool) or float(lifetime) <= 0:
