@@ -233,7 +233,10 @@ the pinned 32-program mypy gate pass with no baseline increase.
 57. `4501ba48ccea9b5309aa0982426486ed397f8e85`: retire one fixed router typing
     diagnostic from the baseline.
 
-Patches 12–57 are ordered descendants of patch 11 and must be replayed too.
+58. `5e163d510565f9ee7b545fafa136897fd31b31e7`: reject malformed renewal
+    markers and check selected identity before explicit model selection.
+
+Patches 12–58 are ordered descendants of patch 11 and must be replayed too.
 The earlier suite counts above describe historical intermediate stacks.
 At patch 24, strict offline login/subscription validation passed 113 tests,
 with two live tests excluded, zero external network attempts, zero new typing
@@ -347,3 +350,9 @@ At patch 56, 3,876 full offline tests, 416 focused tests, 317 cloud checks,
 expiry, unknown expiry, settings/name changes, scope isolation, concurrency
 and per-operation identity admission. Typing improves by one finding (450);
 32 user examples remain clean. No provider calls were made.
+
+At patch 58, 3,886 full offline tests, 426 focused tests and 42 independent
+controls pass. Prior source reproduces all ten new supplied failures and
+18 additional malformed-marker failures. Manager-produced renewal markers
+remain valid; explicit selection performs no catalog call or token refresh.
+Typing matches the 450 baseline; signatures and diff checks pass.
