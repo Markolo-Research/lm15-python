@@ -1556,10 +1556,22 @@ class AsyncLMRouter:
                 self._lms.clear()
                 return transport
 
-        transport = await asyncio.to_thread(detach_transport)
-        aclose = getattr(transport, "aclose", None)
-        if callable(aclose):
-            await aclose()
+        async def finish_close():
+            transport = await asyncio.to_thread(detach_transport)
+            aclose = getattr(transport, "aclose", None)
+            if callable(aclose):
+                await aclose()
+
+        cleanup = asyncio.create_task(finish_close())
+        cancellation = None
+        while not cleanup.done():
+            try:
+                await asyncio.wait({cleanup})
+            except asyncio.CancelledError as exc:
+                cancellation = exc
+        cleanup.result()
+        if cancellation is not None:
+            raise cancellation
 
     async def __aenter__(self) -> "AsyncLMRouter":
         return self

@@ -113,3 +113,57 @@ async def test_close_waits_for_construction_without_blocking_loop():
         await construction
         if closing is not None:
             await closing
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("during_close", [False, True])
+async def test_cancelled_close_finishes_cleanup(during_close):
+    router = AsyncLMRouter()
+    entered, release = threading.Event(), threading.Event()
+    close_entered, close_release = asyncio.Event(), asyncio.Event()
+    closed = []
+
+    class Transport:
+        async def aclose(self):
+            close_entered.set()
+            await close_release.wait()
+            closed.append(True)
+
+    def construct():
+        with router._lock:
+            entered.set()
+            assert release.wait(3)
+            router._transport = Transport()
+
+    construction = asyncio.create_task(asyncio.to_thread(construct))
+    closing = None
+    try:
+        assert await asyncio.to_thread(entered.wait, 1)
+        closing = asyncio.create_task(router.aclose())
+        await asyncio.sleep(0.02)
+        if during_close:
+            release.set()
+            await close_entered.wait()
+        closing.cancel()
+        await asyncio.sleep(0.02)
+        closing.cancel()
+        await asyncio.sleep(0.02)
+        assert not closing.done()
+        release.set()
+        close_release.set()
+        await construction
+        with pytest.raises(asyncio.CancelledError):
+            await closing
+        assert closed == [True]
+        assert router._transport is None
+        await router.aclose()
+        assert closed == [True]
+    finally:
+        release.set()
+        close_release.set()
+        await construction
+        if closing is not None:
+            try:
+                await closing
+            except asyncio.CancelledError:
+                pass
