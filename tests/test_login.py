@@ -1912,7 +1912,7 @@ async def test_queued_login_honors_external_cancel_event(monkeypatch):
     slots.release()
 
 
-@pytest.mark.parametrize("lifetime", [True, False])
+@pytest.mark.parametrize("lifetime", [True, False, float("nan"), float("inf"), float("-inf")])
 def test_login_rejects_boolean_lifetime(lifetime):
     auth = Auth.memory()
     with pytest.raises(ValueError, match="lifetime_s"):
@@ -1969,6 +1969,60 @@ async def test_managed_preparation_drains_repeated_cancellation(stream, fail):
             await asyncio.wait_for(task, timeout=1)
         assert completed == [True]
         assert invoked == []
+    finally:
+        release.set()
+        await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_queued_login_stops_when_auth_closes(monkeypatch):
+    import asyncio
+    from lm15.login import AsyncAuth, manager
+
+    slots = threading.BoundedSemaphore(1)
+    slots.acquire()
+    monkeypatch.setattr(manager, "_ASYNC_LOGIN_SLOTS", slots)
+    auth = AsyncAuth.memory()
+    task = asyncio.create_task(auth.login("groq", "api_key", ui=ScriptUI()))
+    try:
+        await asyncio.sleep(0.03)
+        assert not task.done()
+        auth.sync.close()
+        with pytest.raises(AuthOperationError, match="closed"):
+            await asyncio.wait_for(task, timeout=1)
+    finally:
+        slots.release()
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    with pytest.raises(AuthOperationError, match="closed"):
+        await auth.login("groq", "api_key", ui=ScriptUI())
+    assert slots.acquire(blocking=False)
+    slots.release()
+
+
+@pytest.mark.asyncio
+async def test_owned_admission_drains_before_cancellation():
+    import asyncio
+    from lm15.providers._managed import _owned_thread
+
+    entered, release = threading.Event(), threading.Event()
+    completed = []
+    def admission():
+        entered.set()
+        assert release.wait(3)
+        completed.append(True)
+    task = asyncio.create_task(_owned_thread(admission))
+    try:
+        assert await asyncio.to_thread(entered.wait, 1)
+        for _ in range(2):
+            task.cancel()
+            await asyncio.sleep(0.02)
+            assert not task.done()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 1)
+        assert completed == [True]
     finally:
         release.set()
         await asyncio.gather(task, return_exceptions=True)

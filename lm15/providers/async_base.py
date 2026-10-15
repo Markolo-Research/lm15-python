@@ -29,7 +29,7 @@ from ..errors import (
     UnsupportedFeatureError,
 )
 from ..features import EndpointSupport, ProviderManifest
-from ._managed import admit, async_stream, operation, require_unmanaged_live
+from ._managed import _owned_thread, admit, async_stream, operation, require_unmanaged_live
 from ..sse import aparse_sse
 from ..transports import (
     AsyncTransportResponse,
@@ -201,7 +201,7 @@ class AsyncBaseProviderLM:
         if req is None:
             req = await self._build(self._inner.build_request, request, stream=True)
         if getattr(self, "_managed_admit", None) is not None:
-            await asyncio.to_thread(admit, self, req)
+            await _owned_thread(admit, self, req)
         else:
             admit(self, req)
         try:
@@ -226,7 +226,7 @@ class AsyncBaseProviderLM:
 
     async def _send(self, request: TransportRequest) -> HttpResponse:
         if getattr(self, "_managed_admit", None) is not None:
-            await asyncio.to_thread(admit, self, request)
+            await _owned_thread(admit, self, request)
         else:
             admit(self, request)
         try:

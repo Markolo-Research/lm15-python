@@ -21,10 +21,8 @@ def _prepare(lm):
     return prepare() if prepare is not None else lm
 
 
-async def _aprepare(lm):
-    if getattr(lm, "_managed_prepare", None) is None:
-        return lm
-    preparation = asyncio.create_task(asyncio.to_thread(_prepare, lm))
+async def _owned_thread(fn, *args):
+    preparation = asyncio.create_task(asyncio.to_thread(fn, *args))
     cancellation = None
     while not preparation.done():
         try:
@@ -36,6 +34,12 @@ async def _aprepare(lm):
             preparation.exception()
         raise cancellation
     return preparation.result()
+
+
+async def _aprepare(lm):
+    if getattr(lm, "_managed_prepare", None) is None:
+        return lm
+    return await _owned_thread(_prepare, lm)
 
 
 def operation(method: _F) -> _F:
