@@ -217,7 +217,12 @@ the pinned 32-program mypy gate pass with no baseline increase.
 50. `ef025038f0fc0ae9944179fcbebade0fc0f33ca8`: preserve unrelated scalar,
     list and null credentials before managed shape validation; restore replay 30a.
 
-Patches 12–50 are ordered descendants of patch 11 and must be replayed too.
+51. `fdc9a77cc4fe53e254b1331831461bc10fdbe72f`: keep bound connection display
+    pinned to the selected identity and reject unknown stored lifecycle states.
+52. `fb9b552f00be86aacd2db196d6ec37150be1d809`: commit the generation change
+    in the replacement test fixture.
+
+Patches 12–52 are ordered descendants of patch 11 and must be replayed too.
 The earlier suite counts above describe historical intermediate stacks.
 At patch 24, strict offline login/subscription validation passed 113 tests,
 with two live tests excluded, zero external network attempts, zero new typing
@@ -315,3 +320,8 @@ At patch 50, 3,861 offline tests, 401 focused tests, six preservation cases and
 85 independent probes pass. Prior source reproduces four new failures;
 recognized providers still fail closed. Strict gates, unchanged typing and all
 1,904 contract cases pass. Replay 30a ordering matches generated provenance.
+
+At patch 52, 3,871 full offline tests, 411 focused tests and 16 independent
+controls pass. Nine regressions reproduce on the prior published source.
+Valid lifecycle states and same-identity renewal remain intact. Typing retains
+the 451-finding baseline and 32 clean examples; no provider calls were made.
