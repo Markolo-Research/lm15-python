@@ -188,7 +188,14 @@ the pinned 32-program mypy gate pass with no baseline increase.
 40. `55f020806da908ad4a3712b6c079713c47235a12`: supply the required test UI
     in the bounded-login recovery fixture.
 
-Patches 12–40 are ordered descendants of patch 11 and must be replayed too.
+41. `c2f11d98e8d0174df132efa1ca33f1dec67f926a`: honor externally supplied
+    cancellation events while waiting for login capacity and after acquisition.
+42. `41c385a1f7d5fa95bd4fb419f04dd808d912616f`: reject boolean login
+    lifetimes and drain managed async credential preparation before cancellation.
+43. `72ec677ddf3c223b1daacc1fd8581be327aa8335`: match the empty connections
+    tuple contract in regression assertions.
+
+Patches 12–43 are ordered descendants of patch 11 and must be replayed too.
 The earlier suite counts above describe historical intermediate stacks.
 At patch 24, strict offline login/subscription validation passed 113 tests,
 with two live tests excluded, zero external network attempts, zero new typing
@@ -253,3 +260,10 @@ seven live exclusions. Bounded login recovery and three caller-context
 regressions pass. Strict conformance, signatures and all 1,904 contract-harness
 cases pass (56 fixture skips). The 451-finding package typing baseline remains
 unchanged and all 32 user examples are clean. No provider calls were made.
+
+At patch 43, all seven targeted cases, 3,841 full offline tests and 381 focused
+tests pass, with two Windows skips and seven live exclusions. Prior-source
+regressions reproduce queued cancellation, boolean-True acceptance and four
+managed-preparation cancellation cases. Strict conformance, signatures and
+1,904 contract checks pass. Typing retains the unchanged 451 baseline with
+32 clean user examples. No provider calls were made.
