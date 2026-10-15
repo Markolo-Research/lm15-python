@@ -225,4 +225,3 @@ def _ask(ui: AuthUI, prompt: Any) -> str:
     except (KeyboardInterrupt, EOFError):
         raise AuthOperationError("cancelled", reason="interaction_required", stage="interaction",
                                  recovery="restart_login") from None
-
