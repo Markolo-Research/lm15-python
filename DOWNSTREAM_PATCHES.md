@@ -195,7 +195,10 @@ the pinned 32-program mypy gate pass with no baseline increase.
 43. `72ec677ddf3c223b1daacc1fd8581be327aa8335`: match the empty connections
     tuple contract in regression assertions.
 
-Patches 12–43 are ordered descendants of patch 11 and must be replayed too.
+44. `225d1aaa6388ad61b6d89e9c1707fd9b59e7b9cf`: reject boolean stored attempt
+    start timestamps before interpreting reservation age.
+
+Patches 12–44 are ordered descendants of patch 11 and must be replayed too.
 The earlier suite counts above describe historical intermediate stacks.
 At patch 24, strict offline login/subscription validation passed 113 tests,
 with two live tests excluded, zero external network attempts, zero new typing
@@ -267,3 +270,8 @@ regressions reproduce queued cancellation, boolean-True acceptance and four
 managed-preparation cancellation cases. Strict conformance, signatures and
 1,904 contract checks pass. Typing retains the unchanged 451 baseline with
 32 clean user examples. No provider calls were made.
+
+At patch 44, both timestamp regressions fail on parent and pass on candidate,
+preserving stored bytes. Full offline: 3,843 passed, two Windows skips and seven
+live exclusions. Focused: 383 passed; malformed-slot controls: 26 passed.
+Unchanged typing, strict conformance, signatures and 1,904 contract checks pass.
