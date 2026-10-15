@@ -246,7 +246,10 @@ the pinned 32-program mypy gate pass with no baseline increase.
 62. `e8c9f6da16c084c8089f1149fb1b1b38235acf52`: exercise logout after
     configuration in the admission regression fixture.
 
-Patches 12–62 are ordered descendants of patch 11 and must be replayed too.
+63. `bbd5784ff8e7c2a2ec957fd91069381d147ffa6d`: require stored attempt timing
+    fields and boolean logout markers rather than synthesizing malformed state.
+
+Patches 12–63 are ordered descendants of patch 11 and must be replayed too.
 The earlier suite counts above describe historical intermediate stacks.
 At patch 24, strict offline login/subscription validation passed 113 tests,
 with two live tests excluded, zero external network attempts, zero new typing
@@ -376,3 +379,8 @@ At patch 62, 3,891 full offline tests, 431 focused tests and all 24 dispatch
 race probes pass. Fallback, explicit overrides, cancellation, FileStore,
 cache and rotation controls pass. Typing 450/450, signatures and cumulative
 diff checks pass. No provider calls were made.
+
+At patch 63, 3,901 full offline tests, 441 focused tests, 51 malformed-slot
+cases and 44 independent controls pass. Prior source accepts ten malformed
+shapes and fails 20 atomic-write rejection probes; valid logout/attempt
+lifecycles remain supported. Typing 450/450, signatures and diff checks pass.
