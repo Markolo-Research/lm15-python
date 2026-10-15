@@ -236,7 +236,10 @@ the pinned 32-program mypy gate pass with no baseline increase.
 58. `5e163d510565f9ee7b545fafa136897fd31b31e7`: reject malformed renewal
     markers and check selected identity before explicit model selection.
 
-Patches 12–58 are ordered descendants of patch 11 and must be replayed too.
+59. `7648a6c75cbea088b21c183148801a6578920c77`: validate present empty
+    attempt markers rather than treating them as absent.
+
+Patches 12–59 are ordered descendants of patch 11 and must be replayed too.
 The earlier suite counts above describe historical intermediate stacks.
 At patch 24, strict offline login/subscription validation passed 113 tests,
 with two live tests excluded, zero external network attempts, zero new typing
@@ -356,3 +359,8 @@ controls pass. Prior source reproduces all ten new supplied failures and
 18 additional malformed-marker failures. Manager-produced renewal markers
 remain valid; explicit selection performs no catalog call or token refresh.
 Typing matches the 450 baseline; signatures and diff checks pass.
+
+At patch 59, 3,887 full offline tests, 427 focused tests and 14 independent
+controls pass. Empty-marker reads and atomic writes fail on prior source;
+absent/null and manager-produced markers remain supported. Typing 450/450,
+signatures and diff checks pass. No provider calls were made.
