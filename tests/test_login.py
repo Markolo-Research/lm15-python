@@ -2043,3 +2043,31 @@ def test_managed_store_preserves_unrelated_provider_entries(sandbox, custom):
     assert path.read_bytes() == before
     auth.set_api_key("groq", "groq-test-key")
     assert json.loads(path.read_text(encoding="utf-8"))["custom-provider"] == custom
+
+
+@pytest.mark.parametrize("stage", ["method", "store_reserve", "transaction"])
+def test_login_cannot_reserve_after_auth_closes(monkeypatch, stage):
+    auth = Auth.memory()
+    if stage == "method":
+        original = auth._choose_method
+        def choose(*args, **kwargs):
+            result = original(*args, **kwargs)
+            auth.close()
+            return result
+        monkeypatch.setattr(auth, "_choose_method", choose)
+    elif stage == "store_reserve":
+        original = auth.store.reserve
+        def reserve():
+            original()
+            auth.close()
+        monkeypatch.setattr(auth.store, "reserve", reserve)
+    else:
+        original = auth.store.mutate
+        def mutate(fn):
+            auth.close()
+            return original(fn)
+        monkeypatch.setattr(auth.store, "mutate", mutate)
+    with pytest.raises(AuthOperationError, match="closed"):
+        auth.login("groq", "api_key", ui=ScriptUI(), answers={"key": "test-key"})
+    assert auth.store.read() == {}
+    assert auth._active == {}

@@ -336,6 +336,7 @@ class Auth:
         attempt_id = _attempt_id or f"at_{secrets.token_urlsafe(16)}"
         # Reservation (AUTH-17/18): storage proven writable, one active
         # attempt per slot, generation observed — before any browser opens.
+        self._check_open()
         self.store.reserve()
         try:
             expected = self._reserve(provider, attempt_id, replace, lifetime_s, cancel=cancel)
@@ -485,6 +486,7 @@ class Auth:
             # Publish the local event under the same store lock as its reservation.
             if cancel is not None:
                 with self._lock:
+                    self._check_open()
                     self._active[provider] = cancel
             return self._put(document, slot, material)
 
@@ -619,6 +621,7 @@ class Auth:
                     stage="interaction", recovery="provide_input", provider=provider,
                 )
         attempt_id = f"at_{secrets.token_urlsafe(16)}"
+        self._check_open()
         self.store.reserve()
         try:
             expected = self._reserve(provider, attempt_id, replace, 60.0)

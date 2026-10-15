@@ -1573,9 +1573,11 @@ class AsyncLMRouter:
                 await asyncio.wait({cleanup})
             except asyncio.CancelledError as exc:
                 cancellation = exc
-        cleanup.result()
         if cancellation is not None:
+            if not cleanup.cancelled():
+                cleanup.exception()
             raise cancellation
+        cleanup.result()
 
     async def __aenter__(self) -> "AsyncLMRouter":
         return self

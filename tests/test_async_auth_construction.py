@@ -216,3 +216,25 @@ async def test_cancelled_construction_is_drained(failure, monkeypatch, operation
             await operation
         except asyncio.CancelledError:
             pass
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancelled", [False, True])
+async def test_transport_close_error_preserves_prior_cancellation(cancelled):
+    router = AsyncLMRouter()
+    entered, release = asyncio.Event(), asyncio.Event()
+    class Transport:
+        async def aclose(self):
+            entered.set()
+            await release.wait()
+            raise RuntimeError("close failed")
+    router._transport = Transport()
+    task = asyncio.create_task(router.aclose())
+    await entered.wait()
+    if cancelled:
+        task.cancel()
+        await asyncio.sleep(0)
+    release.set()
+    with pytest.raises(asyncio.CancelledError if cancelled else RuntimeError):
+        await task
+    assert router._transport is None
