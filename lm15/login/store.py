@@ -286,8 +286,9 @@ class Store:
             replacement = fn(copy.deepcopy(current))
             if replacement is None:
                 return current
+            replacement = validate_document(replacement, where=self.description)
             txn.write(replacement)
-            return txn.read()
+            return copy.deepcopy(replacement)
 
     def reserve(self) -> None:
         """AUTH-17: prove the store can be written before any external
