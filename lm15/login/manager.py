@@ -998,10 +998,14 @@ class AsyncAuth:
         return worker.result()
 
     async def connections(self):
-        return await self._run(self.sync.connections)
+        import asyncio
+
+        return await asyncio.to_thread(self.sync.connections)
 
     async def status(self, provider: str):
-        return await self._run(self.sync.status, provider)
+        import asyncio
+
+        return await asyncio.to_thread(self.sync.status, provider)
 
     async def login(self, provider: str, method: Any = None, **kwargs: Any):
         import asyncio

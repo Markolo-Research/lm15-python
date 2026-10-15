@@ -1705,3 +1705,38 @@ async def test_cancelled_async_mutation_is_drained(monkeypatch, failure):
             await operation
         except asyncio.CancelledError:
             pass
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["connections", "status"])
+async def test_read_only_async_auth_cancellation_is_prompt(monkeypatch, method):
+    import asyncio
+    from lm15.login import AsyncAuth
+
+    auth = AsyncAuth.memory()
+    entered, release, finished = threading.Event(), threading.Event(), threading.Event()
+
+    def read(*args):
+        entered.set()
+        try:
+            assert release.wait(3)
+        finally:
+            finished.set()
+
+    monkeypatch.setattr(auth.sync, method, read)
+    operation = asyncio.create_task(getattr(auth, method)(*(["groq"] if method == "status" else [])))
+    try:
+        assert await asyncio.to_thread(entered.wait, 1)
+        operation.cancel()
+        done, _pending = await asyncio.wait({operation}, timeout=0.1)
+        assert operation in done
+        with pytest.raises(asyncio.CancelledError):
+            await operation
+        assert not finished.is_set()
+    finally:
+        release.set()
+        assert await asyncio.to_thread(finished.wait, 1)
+        try:
+            await operation
+        except asyncio.CancelledError:
+            pass
