@@ -222,7 +222,11 @@ the pinned 32-program mypy gate pass with no baseline increase.
 52. `fb9b552f00be86aacd2db196d6ec37150be1d809`: commit the generation change
     in the replacement test fixture.
 
-Patches 12–52 are ordered descendants of patch 11 and must be replayed too.
+53. `d24140a868c26904379f3fee74574311606a3112`: pin interactive catalog lookup
+    to the chosen connection ID and generation before any catalog dispatch.
+54. `bc4d1349b4a2f1be7451dc5ba471d6a003fbb785`: remove a trailing blank line.
+
+Patches 12–54 are ordered descendants of patch 11 and must be replayed too.
 The earlier suite counts above describe historical intermediate stacks.
 At patch 24, strict offline login/subscription validation passed 113 tests,
 with two live tests excluded, zero external network attempts, zero new typing
@@ -325,3 +329,8 @@ At patch 52, 3,871 full offline tests, 411 focused tests and 16 independent
 controls pass. Nine regressions reproduce on the prior published source.
 Valid lifecycle states and same-identity renewal remain intact. Typing retains
 the 451-finding baseline and 32 clean examples; no provider calls were made.
+
+At patch 53, 3,874 full offline tests, 414 focused tests, 32 independent catalog
+controls and 16 prior identity/state controls pass. The parent reproduces
+replacement-key catalog dispatch; same-identity renewal and post-status
+replacement checks pass. Typing remains unchanged and signatures are current.
