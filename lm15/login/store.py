@@ -87,11 +87,27 @@ def _storage_error(message: str, *, reason: str = "storage_unavailable", stage: 
     )
 
 
+def _canonical_entries(entries: Document, *, where: str) -> Document:
+    from .flows import provider_ids
+    from ..registry import canonical_provider
+
+    normalized: Document = {}
+    known = provider_ids()
+    for key, value in entries.items():
+        canonical = canonical_provider(key) if isinstance(key, str) else key
+        target = canonical if canonical in known else key
+        if target in normalized:
+            raise _storage_error(f"Credential store at {where} has duplicate provider spellings; not touching it.")
+        normalized[target] = value
+    return normalized
+
+
 def validate_document(data: Any, *, where: str) -> Document:
     """Reject anything that is not the document shape above.  Raises the
     typed storage error; never returns a guess."""
     if not isinstance(data, dict):
         raise _storage_error(f"Credential store at {where} is not a JSON object; not touching it.")
+    data = _canonical_entries(data, where=where)
     meta = data.get(META_KEY)
     if meta is not None:
         if not isinstance(meta, dict):
@@ -106,6 +122,8 @@ def validate_document(data: Any, *, where: str) -> Document:
         slots = meta.get("slots", {})
         if not isinstance(slots, dict) or any(not isinstance(v, dict) for v in slots.values()):
             raise _storage_error(f"Credential store at {where} has malformed slot metadata; not touching it.")
+        slots = _canonical_entries(slots, where=where)
+        data[META_KEY] = dict(meta, slots=slots)
         for slot in slots.values():
             try:
                 if slot.get("state", "ready") not in ("ready", "needs_login", "indeterminate"):
@@ -269,7 +287,7 @@ class Store:
             if replacement is None:
                 return current
             txn.write(replacement)
-            return copy.deepcopy(replacement)
+            return txn.read()
 
     def reserve(self) -> None:
         """AUTH-17: prove the store can be written before any external
@@ -359,7 +377,7 @@ class FileStore(Store):
                 return store._load()
 
             def write(self, document: Document) -> None:
-                validate_document(document, where=str(store.path))
+                document = validate_document(document, where=str(store.path))
                 try:
                     write_private_json_atomic(store.path, document)
                 except OSError as exc:

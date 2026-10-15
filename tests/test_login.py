@@ -2160,3 +2160,42 @@ def test_interactive_model_catalog_rejects_changed_selection(replacement, model)
         assert transport.requests == []
     finally:
         auth.close()
+
+
+@pytest.mark.parametrize("file_store", [False, True])
+def test_stored_provider_aliases_share_canonical_identity(sandbox, file_store):
+    auth = Auth.memory()
+    original = auth.set_api_key("openai-chat", "test-key")
+    document = auth.store.read()
+    document["openai_chat"] = document.pop("openai-chat")
+    slots = document["_lm15"]["slots"]
+    slots["openai_chat"] = slots.pop("openai-chat")
+    if file_store:
+        path = sandbox / "aliased-credentials.json"
+        path.write_text(json.dumps(document), encoding="utf-8")
+        auth = Auth.local(path)
+    else:
+        auth.store.mutate(lambda _: document)
+    assert auth.status("openai_chat").connection.id == original.id
+    assert [c.id for c in auth.connections()] == [original.id]
+    assert auth.request_auth("openai_chat").credential.value == "test-key"
+    auth.set_api_key("openai-chat", "replacement-key", replace=original.id)
+    stored = auth.store.read()
+    assert "openai_chat" not in stored
+    assert "openai_chat" not in stored["_lm15"]["slots"]
+
+
+@pytest.mark.parametrize("duplicate_slot", [False, True])
+def test_duplicate_stored_provider_spellings_fail_closed(sandbox, duplicate_slot):
+    auth = Auth.memory()
+    auth.set_api_key("openai-chat", "test-key")
+    document = auth.store.read()
+    entries = document["_lm15"]["slots"] if duplicate_slot else document
+    entries["openai_chat"] = entries["openai-chat"]
+    path = sandbox / "duplicate-provider.json"
+    original = json.dumps(document)
+    path.write_text(original, encoding="utf-8")
+    with pytest.raises(AuthOperationError) as error:
+        Auth.local(path).status("openai-chat")
+    assert error.value.reason == "storage_unavailable"
+    assert path.read_text(encoding="utf-8") == original
