@@ -323,7 +323,7 @@ class Auth:
         self._check_open()
         descriptor = self.descriptor(provider)
         provider = descriptor.id
-        if not isinstance(lifetime_s, (int, float)) or lifetime_s <= 0:
+        if isinstance(lifetime_s, bool) or not isinstance(lifetime_s, (int, float)) or lifetime_s <= 0:
             raise ValueError("lifetime_s must be a positive number of seconds")
         chosen = self._choose_method(descriptor, method, ui, allow_unverified=allow_unverified)
         answers = dict(answers or {})

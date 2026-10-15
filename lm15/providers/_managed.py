@@ -21,11 +21,28 @@ def _prepare(lm):
     return prepare() if prepare is not None else lm
 
 
+async def _aprepare(lm):
+    if getattr(lm, "_managed_prepare", None) is None:
+        return lm
+    preparation = asyncio.create_task(asyncio.to_thread(_prepare, lm))
+    cancellation = None
+    while not preparation.done():
+        try:
+            await asyncio.wait({preparation})
+        except asyncio.CancelledError as exc:
+            cancellation = exc
+    if cancellation is not None:
+        if not preparation.cancelled():
+            preparation.exception()
+        raise cancellation
+    return preparation.result()
+
+
 def operation(method: _F) -> _F:
     if inspect.iscoroutinefunction(method):
         @wraps(method)
         async def call(self, *args, **kwargs):
-            lm = await asyncio.to_thread(_prepare, self) if getattr(self, "_managed_prepare", None) else self
+            lm = await _aprepare(self)
             return await method(lm, *args, **kwargs)
     elif inspect.isgeneratorfunction(method):
         @wraps(method)
@@ -41,7 +58,7 @@ def operation(method: _F) -> _F:
 def async_stream(method: _F) -> _F:
     @wraps(method)
     async def call(self, *args, **kwargs):
-        lm = await asyncio.to_thread(_prepare, self) if getattr(self, "_managed_prepare", None) else self
+        lm = await _aprepare(self)
         events = method(lm, *args, **kwargs)
         try:
             async for event in events:

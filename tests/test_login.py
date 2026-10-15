@@ -1909,3 +1909,65 @@ async def test_queued_login_honors_external_cancel_event(monkeypatch):
         await auth.login("groq", "api_key", ui=ScriptUI(), cancel=cancel)
     assert slots.acquire(blocking=False)
     slots.release()
+
+
+@pytest.mark.parametrize("lifetime", [True, False])
+def test_login_rejects_boolean_lifetime(lifetime):
+    auth = Auth.memory()
+    with pytest.raises(ValueError, match="lifetime_s"):
+        auth.login("groq", "api_key", ui=ScriptUI(), answers={"key": "test-key"}, lifetime_s=lifetime)
+    assert auth.connections() == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("fail", [False, True])
+async def test_managed_preparation_drains_repeated_cancellation(stream, fail):
+    import asyncio
+    from lm15.providers._managed import operation, async_stream
+
+    entered, release = threading.Event(), threading.Event()
+    completed = []
+    invoked = []
+
+    class Driver:
+        def _managed_prepare(self):
+            entered.set()
+            assert release.wait(3)
+            completed.append(True)
+            if fail:
+                raise ValueError("preparation failed")
+            return self
+
+        @operation
+        async def complete(self):
+            invoked.append(True)
+            return "result"
+
+        @async_stream
+        async def stream(self):
+            invoked.append(True)
+            yield "result"
+
+    driver = Driver()
+    async def invoke():
+        if stream:
+            async for _ in driver.stream():
+                pass
+        else:
+            await driver.complete()
+    task = asyncio.create_task(invoke())
+    try:
+        assert await asyncio.to_thread(entered.wait, 1)
+        for _ in range(2):
+            task.cancel()
+            await asyncio.sleep(0.02)
+            assert not task.done()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, timeout=1)
+        assert completed == [True]
+        assert invoked == []
+    finally:
+        release.set()
+        await asyncio.gather(task, return_exceptions=True)
