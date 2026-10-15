@@ -57,6 +57,7 @@ def model_choices(
     include_unknown: bool = False,
     registry: Any = None,
     router_config: Any = None,
+    pinned: tuple[str, str] | None = None,
 ) -> tuple[ModelChoice, ...]:
     """The models the saved connection on ``provider`` can select.
 
@@ -64,7 +65,8 @@ def model_choices(
     (``application`` source); ``refresh=True`` fetches the account's own
     list with the saved credential (``provider`` source; renews if due; no
     inference).  With ``capability``, only ``supported`` choices are
-    returned unless ``include_unknown`` is set (AUTH-23).
+    returned unless ``include_unknown`` is set (AUTH-23). ``pinned`` optionally
+    requires the already selected connection id and identity generation.
     """
     if capability is not None and capability not in _CAPABILITIES:
         raise ValueError(f"capability must be one of {sorted(_CAPABILITIES)}")
@@ -74,6 +76,12 @@ def model_choices(
         raise AuthOperationError(
             f"{provider}: no saved connection to list models for", reason="login_required", stage="catalog",
             recovery="restart_login", provider=provider,
+        )
+    if pinned is not None and (connection.id, connection.identity_generation) != pinned:
+        raise AuthOperationError(
+            f"{provider}: the selected connection changed before model discovery; choose again",
+            reason="connection_changed", stage="catalog", recovery="select_connection", provider=provider,
+            connection_id=pinned[0],
         )
     infos: list[Any] = []
     source = "application"

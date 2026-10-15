@@ -2119,3 +2119,30 @@ def test_bound_connection_property_never_exposes_replacement(replacement):
     finally:
         client.close()
         auth.close()
+
+
+@pytest.mark.parametrize("replacement", ["identity", "generation", "logout"])
+def test_interactive_model_catalog_rejects_changed_selection(replacement):
+    from lm15.interactive import _choose_model
+
+    auth = Auth.memory()
+    original = auth.set_api_key("groq", "original-test-key")
+    transport = FakeTransport([_models_reply()])
+    if replacement == "identity":
+        auth.set_api_key("groq", "replacement-test-key", replace=original.id)
+    elif replacement == "generation":
+        def advance_generation(document):
+            slot = document["_lm15"]["slots"]["groq"]
+            slot["generation"] = str(int(slot["generation"]) + 1)
+            return document
+        auth.store.mutate(advance_generation)
+    else:
+        auth.logout("groq")
+    try:
+        with pytest.raises(AuthOperationError) as caught:
+            _choose_model(auth, ScriptUI(), original, model=None, capability=None,
+                          router_config=RouterConfig(transport=transport))
+        assert caught.value.reason == ("login_required" if replacement == "logout" else "connection_changed")
+        assert transport.requests == []
+    finally:
+        auth.close()

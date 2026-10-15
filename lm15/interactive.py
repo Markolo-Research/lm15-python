@@ -197,7 +197,8 @@ def _choose_model(auth: Auth, ui: AuthUI, connection: Connection, *, model: str 
                               identity_generation=connection.identity_generation)
     choices = ()
     try:
-        choices = model_choices(auth, connection.provider, refresh=True, capability=capability, router_config=router_config)
+        choices = model_choices(auth, connection.provider, refresh=True, capability=capability, router_config=router_config,
+                                pinned=(connection.id, connection.identity_generation))
         source_note = "listed by your account just now"
     except AuthOperationError:
         raise
@@ -224,3 +225,4 @@ def _ask(ui: AuthUI, prompt: Any) -> str:
     except (KeyboardInterrupt, EOFError):
         raise AuthOperationError("cancelled", reason="interaction_required", stage="interaction",
                                  recovery="restart_login") from None
+
