@@ -370,3 +370,28 @@ def test_managed_websocket_fails_closed(monkeypatch, asynchronous):
         else:
             invoke(lm, "stream", False, "gpt-4o-realtime-preview")
     assert transport.requests == []
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_managed_cloud_preparations_reuse_identity_scoped_provider(monkeypatch, asynchronous):
+    from lm15.cloud import chains
+
+    providers = []
+    def factory(*args, **kwargs):
+        providers.append(object())
+        return "test-key"
+    monkeypatch.setattr(chains, "credential_provider", factory)
+    monkeypatch.setattr(chains, "profile_settings", lambda *args, **kwargs: {})
+    auth = Auth.memory()
+    first = auth.configure("vertex-anthropic", method="cloud", answers={"named": "environment"},
+                           settings={"project": "saved-project", "location": "us-central1"})
+    router = (AsyncLMRouter if asynchronous else LMRouter)(RouterConfig(auth=auth, env={}))
+    lm = router.lm("vertex-anthropic:claude-test")
+    lm._managed_prepare()
+    lm._managed_prepare()
+    assert len(providers) == 1
+    auth.configure("vertex-anthropic", method="cloud", answers={"named": "environment"},
+                   settings={"project": "saved-project", "location": "us-central1"}, replace=first.id)
+    lm._managed_prepare()
+    lm._managed_prepare()
+    assert len(providers) == 2

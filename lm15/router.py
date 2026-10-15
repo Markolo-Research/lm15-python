@@ -1090,7 +1090,7 @@ def _build_lm(resolution: Resolution, config: RouterConfig, adapters: Mapping[st
 
 def _build_managed_lm(resolution: Resolution, config: RouterConfig, adapters: Mapping[str, type], cls: type,
                       definition: "ProviderDefinition | None", extra: dict, hosted: bool, base_url: str | None,
-                      *, snapshot=None):
+                      *, snapshot=None, cloud_cache=None):
     """AUTH-15 mode B.  Order: explicit ``api_keys`` entry; explicit named
     cloud identity; the scope's saved connection (renewed per request);
     a keyless local server's placeholder.  Never an environment key, a
@@ -1147,7 +1147,7 @@ def _build_managed_lm(resolution: Resolution, config: RouterConfig, adapters: Ma
             origin = (f"managed connection {connection.id} ({connection.label})" if connection is not None
                       else "managed connection")
     if hosted:
-        from .cloud.chains import ChainContext, credential_provider, profile_settings
+        from .cloud.chains import ChainContext, cache_key, credential_provider, profile_settings
         from .cloud.hosts import resolve_settings
 
         env = config.env if config.env is not None else os.environ
@@ -1158,7 +1158,17 @@ def _build_managed_lm(resolution: Resolution, config: RouterConfig, adapters: Ma
                                     profile=profile_settings(definition.access, ctx), endpoint=base_url)
         ctx.settings = settings
         if api_key is None and named is not None:
-            api_key = credential_provider(definition.access, ctx, named=named)
+            if cloud_cache is None:
+                cloud_cache = (threading.Lock(), {})
+            cache_lock, cached = cloud_cache
+            identity = (connection.id, connection.identity_generation) if connection is not None else None
+            key = (identity, named, cache_key(definition.access, ctx))
+            with cache_lock:
+                if cached.get("key") != key:
+                    value = credential_provider(definition.access, ctx, named=named)
+                    cached.clear()  # Retain only this adapter's current identity.
+                    cached.update(key=key, value=value)
+                api_key = cached["value"]
         if api_key is None:
             raise AuthOperationError(
                 f"{provider}: no credential for this cloud door under a managed Auth",
@@ -1182,7 +1192,7 @@ def _build_managed_lm(resolution: Resolution, config: RouterConfig, adapters: Ma
                 execution_extra = dict(original_extra, transport=lm.transport, adaptations=lm.adaptations)
                 return _build_managed_lm(
                     resolution, config, adapters, cls, original_definition, execution_extra, hosted,
-                    original_url, snapshot=auth.request_auth(provider),
+                    original_url, snapshot=auth.request_auth(provider), cloud_cache=cloud_cache,
                 )
             lm._managed_prepare = prepare
             inner._managed_prepare = prepare
