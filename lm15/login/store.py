@@ -53,6 +53,7 @@ import json
 import math
 import os
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -153,10 +154,17 @@ def validate_document(data: Any, *, where: str) -> Document:
         recipe_field = required.get(kind) if isinstance(kind, str) else None
         if recipe_field and (not isinstance(value.get(recipe_field), str) or not value[recipe_field].strip()):
             raise _storage_error(f"Credential store at {where}: entry {key!r} has malformed recipe material; not touching it.")
+        if kind == "env":
+            from ..registry import PROVIDERS, canonical_provider
+
+            definition = PROVIDERS.get(canonical_provider(key))
+            if definition is None or value["name"] not in definition.access.env_keys:
+                raise _storage_error(f"Credential store at {where}: entry {key!r} has an undeclared environment source; not touching it.")
         if kind == "external":
             from .flows.recipes import EXTERNAL_SOURCES
+            from ..registry import canonical_provider
 
-            if value["source"] not in EXTERNAL_SOURCES:
+            if value["source"] not in EXTERNAL_SOURCES or EXTERNAL_SOURCES[value["source"]][0] != canonical_provider(key):
                 raise _storage_error(f"Credential store at {where}: entry {key!r} has an unknown external source; not touching it.")
         if kind == "cloud":
             from ..features import NAMED_CREDENTIALS
@@ -176,7 +184,9 @@ def validate_document(data: Any, *, where: str) -> Document:
                     )
                     for field in ("expires", "issued_at", "lifetime_s")
                 )
-            except OverflowError:
+                if not invalid_times and "expires" in value:
+                    datetime.fromtimestamp(value["expires"] / 1000.0, tz=timezone.utc)
+            except (OverflowError, OSError, ValueError):
                 invalid_times = True
             if invalid_strings or invalid_times:
                 raise _storage_error(f"Credential store at {where}: entry {key!r} has malformed OAuth material; not touching it.")

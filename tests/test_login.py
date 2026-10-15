@@ -1548,5 +1548,49 @@ def test_supported_recipe_discriminators_validate_without_probing():
     for kind, field, values in (("external", "source", EXTERNAL_SOURCES),
                                 ("cloud", "named", NAMED_CREDENTIALS)):
         for value in values:
-            document = {"vertex": {"type": kind, field: value}}
+            provider = EXTERNAL_SOURCES[value][0] if kind == "external" else "vertex"
+            document = {provider: {"type": kind, field: value}}
             assert validate_document(document, where="test") == document
+
+
+@pytest.mark.parametrize("expires", [10**100, 1e308, -1e308])
+def test_oauth_expiry_outside_datetime_range_is_storage_error(sandbox, expires):
+    test_malformed_oauth_material_raises_storage_error(
+        sandbox, {"type": "oauth", "access": "test-token", "expires": expires}
+    )
+
+
+@pytest.mark.parametrize("material", [
+    {"type": "external", "source": "codex-cli"},
+    {"type": "env", "name": "UNRELATED_TEST_SECRET"},
+])
+def test_cross_provider_recipe_is_rejected_before_resolution(sandbox, material):
+    path = sandbox / "credentials.json"
+    original = json.dumps({"openrouter": material})
+    path.write_text(original, encoding="utf-8")
+    auth = Auth.local(path)
+    with pytest.raises(AuthOperationError) as caught:
+        auth.request_auth("openrouter")
+    assert caught.value.reason == "storage_unavailable"
+    assert path.read_text(encoding="utf-8") == original
+
+
+def test_configure_rejects_undeclared_environment_variable(monkeypatch):
+    monkeypatch.setenv("UNRELATED_TEST_SECRET", "never-send-this-test-value")
+    auth = Auth.memory()
+    with pytest.raises(AuthOperationError):
+        auth.configure("openrouter", method="env", answers={"name": "UNRELATED_TEST_SECRET"})
+    assert "openrouter" not in auth.store.read()
+
+
+@pytest.mark.parametrize("canonical_first", [False, True])
+def test_canonical_provider_settings_win_independent_of_insertion_order(canonical_first):
+    from lm15.router import _settings_entry
+
+    entries = [("vertex_anthropic", {"project": "alias-project"}),
+               ("vertex-anthropic", {"project": "canonical-project"})]
+    if canonical_first:
+        entries.reverse()
+    assert _settings_entry(RouterConfig(settings=dict(entries)), "vertex-anthropic") == {
+        "project": "canonical-project"
+    }

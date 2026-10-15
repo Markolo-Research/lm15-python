@@ -929,6 +929,8 @@ def _env_key_for(provider: str, config: RouterConfig, adapters: Mapping[str, typ
 
 def _settings_entry(config: RouterConfig, provider: str) -> Mapping[str, str] | None:
     """The ``settings`` entry for ``provider``, under any spelling of its name."""
+    if config.settings is not None and provider in config.settings:
+        return config.settings[provider]
     for key, value in (config.settings or {}).items():
         if _canonical_provider(key) == provider:
             return value
@@ -1571,19 +1573,34 @@ class AsyncLMRouter:
                 self._lms[resolution.provider] = lm
         return lm
 
+    async def _alm(self, model: str):
+        import asyncio
+
+        return await asyncio.to_thread(self.lm, model)
+
     plan = LMRouter.plan
 
     async def complete(self, request: Request) -> Response:
         resolution = self.resolve(request.model)
-        return await self.lm(request.model).complete(_routed_request(request, resolution))
+        lm = await self._alm(request.model)
+        return await lm.complete(_routed_request(request, resolution))
 
-    def stream(self, request: Request) -> AsyncIterator[StreamEvent]:
+    async def stream(self, request: Request) -> AsyncIterator[StreamEvent]:
         resolution = self.resolve(request.model)
-        return self.lm(request.model).stream(_routed_request(request, resolution))
+        lm = await self._alm(request.model)
+        stream = lm.stream(_routed_request(request, resolution))
+        try:
+            async for event in stream:
+                yield event
+        finally:
+            close = getattr(stream, "aclose", None)
+            if callable(close):
+                await close()
 
     async def cache(self, prefix: Request, *, ttl_seconds: int | None = None, label: str | None = None):
         resolution = self.resolve(prefix.model)
-        cached = await self.lm(prefix.model).cache(_routed_request(prefix, resolution), ttl_seconds=ttl_seconds, label=label)
+        lm = await self._alm(prefix.model)
+        cached = await lm.cache(_routed_request(prefix, resolution), ttl_seconds=ttl_seconds, label=label)
         return replace(cached, provider=resolution.provider)
 
     resolve_openai_chat = LMRouter.resolve_openai_chat
@@ -1606,11 +1623,22 @@ class AsyncLMRouter:
         """
         if not isinstance(stream, bool):
             raise TypeError("stream must be a boolean")
-        request, lm = self.request_from_openai_chat(model, messages, **kwargs)
+        import asyncio
+
+        request, lm = await asyncio.to_thread(self.request_from_openai_chat, model, messages, **kwargs)
         if stream:
             return AsyncResponseStream(lm.stream(request), request)
         return await lm.complete(request)
 
-    def stream_from_openai_chat(self, model: str, messages: object, /, **kwargs) -> AsyncIterator[StreamEvent]:
-        request, lm = self.request_from_openai_chat(model, messages, **kwargs)
-        return lm.stream(request)
+    async def stream_from_openai_chat(self, model: str, messages: object, /, **kwargs) -> AsyncIterator[StreamEvent]:
+        import asyncio
+
+        request, lm = await asyncio.to_thread(self.request_from_openai_chat, model, messages, **kwargs)
+        stream = lm.stream(request)
+        try:
+            async for event in stream:
+                yield event
+        finally:
+            close = getattr(stream, "aclose", None)
+            if callable(close):
+                await close()

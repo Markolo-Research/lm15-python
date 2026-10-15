@@ -82,8 +82,9 @@ class RecipeFlow(ProviderFlow):
                                renewal="none")
         if method.id == "env":
             name = answers.get("name", "")
-            if not name:
-                raise LoginDenied("no environment variable was chosen")
+            allowed_names = {option.id for field in method.fields if field.id == "name" for option in field.options}
+            if name not in allowed_names:
+                raise LoginDenied("choose a declared environment variable")
             return LoginResult(material={"type": "env", "name": name}, label=f"{self.provider} key from ${name}",
                                renewal="recipe")
         if method.id.startswith("external:"):
