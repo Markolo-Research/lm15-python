@@ -259,7 +259,12 @@ the pinned 32-program mypy gate pass with no baseline increase.
 67. `acc18dde4fc9ebc57858c4d2c30d782e0567cd7c`: return normalized mutation
     values without a fallible read after the write has committed.
 
-Patches 12–67 are ordered descendants of patch 11 and must be replayed too.
+68. `442275a3bdd49bcc36e9640a3701800f6bd9bf4f`: reconstruct auth stream
+    errors with conservative lifecycle values rather than raising TypeError.
+69. `bef048d143ae425a8c3f4578e80252844985f698`: narrow the typed constructor
+    branch and supply valid request fixtures for materialization regressions.
+
+Patches 12–69 are ordered descendants of patch 11 and must be replayed too.
 The earlier suite counts above describe historical intermediate stacks.
 At patch 24, strict offline login/subscription validation passed 113 tests,
 with two live tests excluded, zero external network attempts, zero new typing
@@ -404,3 +409,8 @@ At patch 67, 3,931 full offline tests, 471 focused tests, 49 alias controls
 and 85 unknown-schema controls pass. Prior source reproduces the post-write
 fault; canonical private return values and atomic failures pass. Typing
 450/450, signatures and diff checks pass. No provider calls were made.
+
+At patch 69, 3,933 full offline tests, 494 focused tests, 264 stream controls
+and 153 metadata/completion/rate-limit cases pass. Original source reproduces
+missing-reason errors with valid requests. Typing remains 450 baseline findings,
+32 examples clean; signatures and diff checks pass. No provider calls.
