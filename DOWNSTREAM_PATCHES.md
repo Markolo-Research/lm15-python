@@ -143,7 +143,11 @@ the pinned 32-program mypy gate pass with no baseline increase.
 26. `668ad88e7bd7f955709f6aaa5215e0faa801e396`: reject missing, unknown and
     non-string material kinds before status or request dispatch.
 
-Patches 12–26 are ordered descendants of patch 11 and must be replayed too.
+27. `12248612f4048f5b2d66fecee46b3e1236604574`: classify overflowing OAuth
+    timestamps and unknown recipe discriminator values as storage errors;
+    preserve native cancellation when unknown-provider discovery cannot reserve state.
+
+Patches 12–27 are ordered descendants of patch 11 and must be replayed too.
 The earlier suite counts above describe historical intermediate stacks.
 At patch 24, strict offline login/subscription validation passed 113 tests,
 with two live tests excluded, zero external network attempts, zero new typing
@@ -156,3 +160,8 @@ At patch 26, all 222 offline login/router tests pass, including 13 focused
 malformed-material regressions. All 32 user typing programs remain clean,
 with the unchanged package baseline. Syntax and diff checks pass. This is
 focused correction evidence, not a new full-suite or upstream qualification.
+
+At patch 27, 229 offline login/router tests and 20 focused boundary tests pass.
+All supported recipe discriminator values are covered without external probes.
+The 32 user typing programs remain clean with no package-baseline increase;
+imports, syntax and diff checks pass.
