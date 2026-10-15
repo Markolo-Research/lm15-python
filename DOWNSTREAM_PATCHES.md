@@ -137,7 +137,13 @@ the pinned 32-program mypy gate pass with no baseline increase.
 24. `3e048b95b4d8e98369ca268f1cbf55964b3e369e`: separate the optional
     recipe-field variable from slot-field typing.
 
-Patches 12–24 are ordered descendants of patch 11 and must be replayed too.
+25. `4dc6dbd406b407461d5de35cfc0294c3d6289d56`: validate required OAuth
+    access tokens, optional refresh/account identifiers and finite timestamps
+    at the typed storage boundary; preserve malformed files.
+26. `668ad88e7bd7f955709f6aaa5215e0faa801e396`: reject missing, unknown and
+    non-string material kinds before status or request dispatch.
+
+Patches 12–26 are ordered descendants of patch 11 and must be replayed too.
 The earlier suite counts above describe historical intermediate stacks.
 At patch 24, strict offline login/subscription validation passed 113 tests,
 with two live tests excluded, zero external network attempts, zero new typing
@@ -145,3 +151,8 @@ findings, 32 clean user programs, and passing signatures/lock/diff checks.
 Future replay must rerun the full qualification described above; these counts
 are not evidence for a newer upstream base. Keep this replay manifest and
 DSPy's generated provenance aligned whenever another correction is added.
+
+At patch 26, all 222 offline login/router tests pass, including 13 focused
+malformed-material regressions. All 32 user typing programs remain clean,
+with the unchanged package baseline. Syntax and diff checks pass. This is
+focused correction evidence, not a new full-suite or upstream qualification.
