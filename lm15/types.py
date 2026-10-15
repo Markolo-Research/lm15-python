@@ -797,7 +797,7 @@ class DataPart:
     if TYPE_CHECKING:
         def __init__(
             self,
-            value: object,
+            value: JsonPrimitive | list[Any] | dict[str, Any],
             probabilities: Mapping[str, Mapping[str, float]] | None = ...,
             method: JudgmentMethod | None = ...,
             continuation: ContinuationState | Sequence[ContinuationState] = ...,

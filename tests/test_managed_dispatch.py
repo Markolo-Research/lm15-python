@@ -29,7 +29,8 @@ def request(model="llama3"):
 
 @pytest.mark.parametrize("asynchronous", [False, True])
 @pytest.mark.parametrize("spelling", ["vertex-anthropic", "vertex_anthropic"])
-def test_managed_cloud_settings_use_canonical_provider_aliases(monkeypatch, asynchronous, spelling):
+@pytest.mark.parametrize("managed", [False, True])
+def test_managed_cloud_settings_use_canonical_provider_aliases(monkeypatch, asynchronous, spelling, managed):
     from lm15.cloud import hosts
 
     resolve_settings = hosts.resolve_settings
@@ -41,7 +42,7 @@ def test_managed_cloud_settings_use_canonical_provider_aliases(monkeypatch, asyn
 
     monkeypatch.setattr(hosts, "resolve_settings", resolve)
     router = (AsyncLMRouter if asynchronous else LMRouter)(RouterConfig(
-        auth=Auth.memory(), env={}, api_keys={"vertex-anthropic": "test-key"},
+        auth=Auth.memory() if managed else None, env={}, api_keys={"vertex-anthropic": "test-key"},
         settings={spelling: {"project": "configured-project", "location": "us-central1"}},
     ))
     lm = router.lm("vertex-anthropic:claude-test")

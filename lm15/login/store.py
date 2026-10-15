@@ -117,7 +117,8 @@ def validate_document(data: Any, *, where: str) -> Document:
                     raise ValueError("connection_id must be a nonempty string or null")
                 for field in ("generation", "revision"):
                     value = slot.get(field)
-                    int(0 if value is None else value)
+                    if not isinstance(value, str) or not value.isascii() or not value.isdecimal():
+                        raise ValueError(f"{field} must be a nonnegative decimal string")
                 if slot.get("settings") is not None and not isinstance(slot["settings"], dict):
                     raise ValueError("settings must be an object")
                 if any(not isinstance(value, str) for value in (slot.get("settings") or {}).values()):

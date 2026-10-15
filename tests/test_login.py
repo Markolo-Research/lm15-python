@@ -1046,6 +1046,8 @@ def test_external_claude_cli_source_reads_in_place(sandbox: Path, monkeypatch: p
 
 @pytest.mark.parametrize(("field", "value"), [
     ("generation", "bad"), ("revision", []), ("settings", 1),
+    *[(field, value) for field in ("generation", "revision")
+      for value in (None, False, True, 0, 1, 1.9, -1, "-1", "1.9", "", "١")],
     *[("state", value) for value in ("needs_logni", "indetermiante", "", None, False, [], {})],
     *[("connection_id", value) for value in ([], {}, 1, False, "", " ")],
     ("previous_ids", [[]]), ("routes", [1]),
@@ -1072,7 +1074,7 @@ def test_external_claude_cli_source_reads_in_place(sandbox: Path, monkeypatch: p
 ])
 def test_malformed_slot_fields_raise_storage_error(sandbox, field, value):
     path = sandbox / "credentials.json"
-    data = {"_lm15": {"version": 1, "slots": {"groq": {field: value}}}}
+    data = {"_lm15": {"version": 1, "slots": {"groq": {"generation": "0", "revision": "0", field: value}}}}
     original = json.dumps(data)
     path.write_text(original, encoding="utf-8")
     auth = Auth.local(path)

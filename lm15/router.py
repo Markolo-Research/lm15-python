@@ -994,7 +994,7 @@ def _build_lm(resolution: Resolution, config: RouterConfig, adapters: Mapping[st
         from .cloud.chains import profile_settings
 
         env = config.env if config.env is not None else os.environ
-        given = (config.settings or {}).get(resolution.provider)
+        given = _settings_entry(config, resolution.provider)
         ctx = ChainContext.online(env)
         settings = resolve_settings(definition.access.host, given, env, provider=resolution.provider,
                                     profile=profile_settings(definition.access, ctx), endpoint=base_url)
