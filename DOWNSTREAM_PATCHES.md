@@ -147,7 +147,12 @@ the pinned 32-program mypy gate pass with no baseline increase.
     timestamps and unknown recipe discriminator values as storage errors;
     preserve native cancellation when unknown-provider discovery cannot reserve state.
 
-Patches 12–27 are ordered descendants of patch 11 and must be replayed too.
+28. `fde80cdbd4da61e6c56bef68e72b051c0fa7821c`: bind environment and external
+    credential recipes to their declared providers, validate datetime expiry
+    ranges, give canonical settings deterministic precedence, and offload initial
+    adapter construction in async entry points with stream cleanup.
+
+Patches 12–28 are ordered descendants of patch 11 and must be replayed too.
 The earlier suite counts above describe historical intermediate stacks.
 At patch 24, strict offline login/subscription validation passed 113 tests,
 with two live tests excluded, zero external network attempts, zero new typing
@@ -165,3 +170,8 @@ At patch 27, 229 offline login/router tests and 20 focused boundary tests pass.
 All supported recipe discriminator values are covered without external probes.
 The 32 user typing programs remain clean with no package-baseline increase;
 imports, syntax and diff checks pass.
+
+At patch 28, 306 broader offline tests pass (three optional live Ollama tests
+excluded), including 13 focused security and off-loop construction regressions.
+All 32 user typing examples remain clean with unchanged package baseline.
+Imports, syntax and diff checks pass; no real credentials or providers are used.
