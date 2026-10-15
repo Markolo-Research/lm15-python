@@ -164,7 +164,15 @@ the pinned 32-program mypy gate pass with no baseline increase.
     async adapter construction through repeated cancellation before propagating
     native cancellation to the caller.
 
-Patches 12–31 are ordered descendants of patch 11 and must be replayed too.
+32. `af502a8bec56f6f5c9c97a339b9979d7f39d45d8`: pin catalog discovery to the
+    captured connection and generation before constructing its router.
+33. `b37edbb1af6bebf02772ce9cda43e8ca652441e6`: preserve saved identity in bound,
+    catalog and verification APIs; drain mutating async workers and OpenAI-shaped
+    construction; validate material kinds against provider flows.
+34. `d10a00595cc8a80fed1866c18bc8ef36afa22406`: preserve generic construction
+    result typing and normalize whitespace.
+
+Patches 12–34 are ordered descendants of patch 11 and must be replayed too.
 The earlier suite counts above describe historical intermediate stacks.
 At patch 24, strict offline login/subscription validation passed 113 tests,
 with two live tests excluded, zero external network attempts, zero new typing
@@ -202,4 +210,11 @@ At patch 31, 3,796 full offline tests pass, with two Windows-only skips and
 seven live exclusions. Ten focused async cases, all six strict conformance
 checks, signatures, typing and the contract harness pass on macOS/Python 3.12.
 The no-home fixture correction is commit 40996bdd556901b062a9b6845929cde4bc18521d.
+No provider calls were made.
+
+At patch 34, 3,814 full offline tests and 354 focused tests pass, with two
+Windows-only skips and seven live exclusions. Strict conformance, signatures
+and the contract harness pass (1,904 cases, 56 fixture skips). The original
+451-finding package typing baseline is unchanged; 32 user examples are clean.
+Catalog replacement and saved-identity override regressions are included.
 No provider calls were made.
