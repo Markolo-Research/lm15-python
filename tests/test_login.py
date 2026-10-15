@@ -1899,7 +1899,7 @@ async def test_queued_login_honors_external_cancel_event(monkeypatch):
         cancel.set()
         with pytest.raises(LoginCancelled):
             await asyncio.wait_for(task, timeout=1)
-        assert auth.sync.connections() == []
+        assert auth.sync.connections() == ()
     finally:
         slots.release()
         if not task.done():
@@ -1916,7 +1916,7 @@ def test_login_rejects_boolean_lifetime(lifetime):
     auth = Auth.memory()
     with pytest.raises(ValueError, match="lifetime_s"):
         auth.login("groq", "api_key", ui=ScriptUI(), answers={"key": "test-key"}, lifetime_s=lifetime)
-    assert auth.connections() == []
+    assert auth.connections() == ()
 
 
 @pytest.mark.asyncio
