@@ -201,7 +201,12 @@ the pinned 32-program mypy gate pass with no baseline increase.
 45. `d33218f802c66c163837dae682450a07da0aa8ef`: reject nonfinite login
     lifetimes, stop queued logins after Auth closure, and drain managed admission.
 
-Patches 12–45 are ordered descendants of patch 11 and must be replayed too.
+46. `58969ecaddce97506da75d3983267f8a9f8ee2ee`: preserve unrelated provider
+    credential schemas in the shared file while validating recognized providers.
+47. `c32e5b4a50f40c33bbcf6980ce133c9d721c9813`: specify UTF-8 in the shared
+    credential preservation regression.
+
+Patches 12–47 are ordered descendants of patch 11 and must be replayed too.
 The earlier suite counts above describe historical intermediate stacks.
 At patch 24, strict offline login/subscription validation passed 113 tests,
 with two live tests excluded, zero external network attempts, zero new typing
@@ -284,3 +289,9 @@ real complete/send and stream preparation/admission cancellation with worker
 errors. Full offline: 3,848 passed, two Windows skips and seven live exclusions;
 focused: 388 passed. Typing remains unchanged; strict checks and 1,904 contract
 cases pass. Cancelled calls send nothing; no provider calls were made.
+
+At patch 47, 3,850 offline tests and 390 focused tests pass, with two Windows
+skips and seven live exclusions. Both shared-store regressions and 73 independent
+store probes pass, preserving unrelated entries while malformed recognized
+provider material fails closed. Unchanged typing, strict checks and all 1,904
+contract cases pass. No provider calls were made.
