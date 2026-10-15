@@ -226,7 +226,14 @@ the pinned 32-program mypy gate pass with no baseline increase.
     to the chosen connection ID and generation before any catalog dispatch.
 54. `bc4d1349b4a2f1be7451dc5ba471d6a003fbb785`: remove a trailing blank line.
 
-Patches 12–54 are ordered descendants of patch 11 and must be replayed too.
+55. `39a21191e793e28c41a917174d3e103f833d2458`: retain a bounded, identity-scoped
+    cloud credential provider across managed preparation snapshots.
+56. `606bcdec9d17e19f7d02fdbb5456846c1a100b23`: invalidate the provider when
+    credential-source environment inputs change and retain type narrowing.
+57. `4501ba48ccea9b5309aa0982426486ed397f8e85`: retire one fixed router typing
+    diagnostic from the baseline.
+
+Patches 12–57 are ordered descendants of patch 11 and must be replayed too.
 The earlier suite counts above describe historical intermediate stacks.
 At patch 24, strict offline login/subscription validation passed 113 tests,
 with two live tests excluded, zero external network attempts, zero new typing
@@ -334,3 +341,9 @@ At patch 53, 3,874 full offline tests, 414 focused tests, 32 independent catalog
 controls and 16 prior identity/state controls pass. The parent reproduces
 replacement-key catalog dispatch; same-identity renewal and post-status
 replacement checks pass. Typing remains unchanged and signatures are current.
+
+At patch 56, 3,876 full offline tests, 416 focused tests, 317 cloud checks,
+26 independent cache controls and both secret-rotation cases pass. Tests cover
+expiry, unknown expiry, settings/name changes, scope isolation, concurrency
+and per-operation identity admission. Typing improves by one finding (450);
+32 user examples remain clean. No provider calls were made.
