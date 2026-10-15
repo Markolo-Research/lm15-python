@@ -1821,3 +1821,45 @@ async def test_async_read_workers_remain_bounded_after_cancellation(monkeypatch)
         release.set()
         await asyncio.gather(*tasks, return_exceptions=True)
     assert await asyncio.wait_for(auths[0].connections(), timeout=1) == []
+
+
+@pytest.mark.asyncio
+async def test_abandoned_login_workers_are_bounded(monkeypatch):
+    import asyncio
+    from lm15.login import AsyncAuth
+    from lm15.login import manager
+
+    slots = threading.BoundedSemaphore(2)
+    monkeypatch.setattr(manager, "_ASYNC_LOGIN_SLOTS", slots)
+    release, saturated = threading.Event(), threading.Event()
+    entered = []
+
+    class BlockingUI(ScriptUI):
+        def prompt(self, prompt):
+            entered.append(threading.get_ident())
+            if len(entered) == 2:
+                saturated.set()
+            assert release.wait(3)
+            return "test-key"
+
+    auths = [AsyncAuth.memory() for _ in range(8)]
+    tasks = [asyncio.create_task(auth.login("groq", "api_key", ui=BlockingUI())) for auth in auths]
+    try:
+        assert await asyncio.to_thread(saturated.wait, 1)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        assert all(task.cancelled() for task in tasks)
+        assert len(entered) == 2
+        retry = asyncio.create_task(auths[0].login("groq", "api_key", ui=BlockingUI()))
+        tasks.append(retry)
+        await asyncio.sleep(0.05)
+        assert len(entered) == 2
+        retry.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await retry
+    finally:
+        release.set()
+        await asyncio.gather(*tasks, return_exceptions=True)
+    connection = await asyncio.wait_for(auths[-1].login("groq", "api_key", answers={"key": "test-key"}), timeout=1)
+    assert connection.provider == "groq"
