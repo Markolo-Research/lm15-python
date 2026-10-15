@@ -119,6 +119,7 @@ def validate_document(data: Any, *, where: str) -> Document:
                     value = slot.get(field)
                     if not isinstance(value, str) or not value.isascii() or not value.isdecimal():
                         raise ValueError(f"{field} must be a nonnegative decimal string")
+                    int(value)  # Check the runtime conversion limit before exposing the record.
                 if slot.get("settings") is not None and not isinstance(slot["settings"], dict):
                     raise ValueError("settings must be an object")
                 if any(not isinstance(value, str) for value in (slot.get("settings") or {}).values()):
