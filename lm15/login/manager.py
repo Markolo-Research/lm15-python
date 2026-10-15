@@ -43,6 +43,7 @@ from .types import AuthUI, Connection, ConnectionStatus, LoginMethod, ProviderDe
 __all__ = ["Auth", "AsyncAuth", "ForgetResult", "RENEWAL_LEAD_S"]
 
 RENEWAL_LEAD_S = 300.0  # AUTH-20.3: min(300 s, lifetime / 10)
+_ASYNC_READ_SLOTS = threading.BoundedSemaphore(4)
 
 
 def _now_iso(clock: Callable[[], float]) -> str:
@@ -1000,6 +1001,11 @@ class AsyncAuth:
     async def _read(self, fn: Callable[..., Any], *args: Any) -> Any:
         import asyncio
 
+        # Bound blocked reads across Auth instances and event loops. Waiting
+        # callers remain cancellable without consuming another native thread.
+        slots = _ASYNC_READ_SLOTS
+        while not slots.acquire(blocking=False):
+            await asyncio.sleep(0.01)
         loop = asyncio.get_running_loop()
         result = loop.create_future()
 
@@ -1018,12 +1024,18 @@ class AsyncAuth:
                 value = fn(*args)
             except BaseException as exc:
                 error = exc
+            finally:
+                slots.release()
             try:
                 loop.call_soon_threadsafe(deliver, value, error)
             except RuntimeError:
                 pass  # A cancelled read may finish after its loop has closed.
 
-        threading.Thread(target=read, daemon=True, name="lm15-read").start()
+        try:
+            threading.Thread(target=read, daemon=True, name="lm15-read").start()
+        except BaseException:
+            slots.release()
+            raise
         return await result
 
     async def connections(self):

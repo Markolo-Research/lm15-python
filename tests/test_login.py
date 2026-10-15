@@ -1055,6 +1055,7 @@ def test_external_claude_cli_source_reads_in_place(sandbox: Path, monkeypatch: p
     ("verification", {"result": "valid", "detail": 1}),
     ("attempt", {"id": "old", "started_at_s": "bad", "lifetime_s": 900}),
     ("attempt", {"id": "old", "started_at_s": 0, "lifetime_s": "bad"}),
+    *[("attempt", {"id": "old", "started_at_s": 0, "lifetime_s": value}) for value in (0, -1, False)],
 ])
 def test_malformed_slot_fields_raise_storage_error(sandbox, field, value):
     path = sandbox / "credentials.json"
@@ -1780,3 +1781,43 @@ print("shutdown completed")
                             text=True, encoding="utf-8", timeout=5)
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "shutdown completed"
+
+
+@pytest.mark.asyncio
+async def test_async_read_workers_remain_bounded_after_cancellation(monkeypatch):
+    import asyncio
+    from lm15.login import AsyncAuth
+    from lm15.login import manager
+
+    slots = threading.BoundedSemaphore(2)
+    monkeypatch.setattr(manager, "_ASYNC_READ_SLOTS", slots)
+    release = threading.Event()
+    entered = []
+
+    def read():
+        entered.append(threading.get_ident())
+        assert release.wait(3)
+        return []
+
+    auths = [AsyncAuth.memory() for _ in range(8)]
+    for auth in auths:
+        monkeypatch.setattr(auth.sync, "connections", read)
+    tasks = [asyncio.create_task(auth.connections()) for auth in auths]
+    try:
+        await asyncio.sleep(0.05)
+        assert len(entered) == 2
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        assert all(task.cancelled() for task in tasks)
+        retry = asyncio.create_task(auths[0].connections())
+        tasks.append(retry)
+        await asyncio.sleep(0.05)
+        assert len(entered) == 2
+        retry.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await retry
+    finally:
+        release.set()
+        await asyncio.gather(*tasks, return_exceptions=True)
+    assert await asyncio.wait_for(auths[0].connections(), timeout=1) == []

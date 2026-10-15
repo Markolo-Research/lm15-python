@@ -142,6 +142,9 @@ def validate_document(data: Any, *, where: str) -> Document:
                     for field, default in (("started_at_s", 0), ("lifetime_s", 900)):
                         if not math.isfinite(float(attempt.get(field, default))):
                             raise ValueError(f"{field} must be finite")
+                    lifetime = attempt.get("lifetime_s", 900)
+                    if isinstance(lifetime, bool) or float(lifetime) <= 0:
+                        raise ValueError("attempt lifetime must be positive")
                     if "expected_generation" in attempt:
                         int(attempt["expected_generation"])
             except (TypeError, ValueError, OverflowError) as exc:
