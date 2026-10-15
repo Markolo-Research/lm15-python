@@ -2110,6 +2110,7 @@ def test_bound_connection_property_never_exposes_replacement(replacement):
             def advance_generation(document):
                 slot = document["_lm15"]["slots"]["groq"]
                 slot["generation"] = str(int(slot["generation"]) + 1)
+                return document
             auth.store.mutate(advance_generation)
         else:
             auth.logout("groq")
