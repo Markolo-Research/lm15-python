@@ -214,7 +214,10 @@ the pinned 32-program mypy gate pass with no baseline increase.
 49. `d96422a9343f86835b9908def211728e3633e0da`: enforce closure under the
     reservation lock for configure operations without a cancellation event.
 
-Patches 12–49 are ordered descendants of patch 11 and must be replayed too.
+50. `ef025038f0fc0ae9944179fcbebade0fc0f33ca8`: preserve unrelated scalar,
+    list and null credentials before managed shape validation; restore replay 30a.
+
+Patches 12–50 are ordered descendants of patch 11 and must be replayed too.
 The earlier suite counts above describe historical intermediate stacks.
 At patch 24, strict offline login/subscription validation passed 113 tests,
 with two live tests excluded, zero external network attempts, zero new typing
@@ -307,3 +310,8 @@ contract cases pass. No provider calls were made.
 At patch 49, 3,857 full offline tests, 397 focused tests, seven supplied
 regressions and seven real race probes pass. The parent reproduces the configure
 race; strict gates and the unchanged typing baseline pass. No provider calls.
+
+At patch 50, 3,861 offline tests, 401 focused tests, six preservation cases and
+85 independent probes pass. Prior source reproduces four new failures;
+recognized providers still fail closed. Strict gates, unchanged typing and all
+1,904 contract cases pass. Replay 30a ordering matches generated provenance.
