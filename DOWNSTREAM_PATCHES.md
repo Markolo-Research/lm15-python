@@ -249,7 +249,12 @@ the pinned 32-program mypy gate pass with no baseline increase.
 63. `bbd5784ff8e7c2a2ec957fd91069381d147ffa6d`: require stored attempt timing
     fields and boolean logout markers rather than synthesizing malformed state.
 
-Patches 12–63 are ordered descendants of patch 11 and must be replayed too.
+64. `cdeafb4cfe82af9142c7b23f5d4caceca012817e`: align unmanaged cloud
+    setting aliases, validate identity counters and narrow JSON scalar input types.
+65. `bcf8a48f3da00fdb4e90ebdfde7b12695ad02bda`: reject counters beyond
+    the runtime integer-conversion limit before exposing stored records.
+
+Patches 12–65 are ordered descendants of patch 11 and must be replayed too.
 The earlier suite counts above describe historical intermediate stacks.
 At patch 24, strict offline login/subscription validation passed 113 tests,
 with two live tests excluded, zero external network attempts, zero new typing
@@ -384,3 +389,8 @@ At patch 63, 3,901 full offline tests, 441 focused tests, 51 malformed-slot
 cases and 44 independent controls pass. Prior source accepts ten malformed
 shapes and fails 20 atomic-write rejection probes; valid logout/attempt
 lifecycles remain supported. Typing 450/450, signatures and diff checks pass.
+
+At patch 65, 3,927 full offline tests and 467 focused tests pass. Oversized
+counter, legacy-store, manager lifecycle, alias and DataPart typing controls
+pass; all 42 corrected independent renewal controls pass. Typing 450/450,
+generator, signatures and diff checks pass. No provider calls were made.
