@@ -178,7 +178,10 @@ the pinned 32-program mypy gate pass with no baseline increase.
 36. `bdb149c6c6a8e1273400341ab2317b82814a9bf8`: isolate cancellable reads
     from default-executor shutdown and validate stored connection identifiers.
 
-Patches 12–36 are ordered descendants of patch 11 and must be replayed too.
+37. `6124527c510ba9369e9c816ad168653be9db8861`: bound daemon read workers
+    across instances and loops; require positive, non-boolean attempt lifetimes.
+
+Patches 12–37 are ordered descendants of patch 11 and must be replayed too.
 The earlier suite counts above describe historical intermediate stacks.
 At patch 24, strict offline login/subscription validation passed 113 tests,
 with two live tests excluded, zero external network attempts, zero new typing
@@ -232,3 +235,8 @@ Strict checks, unchanged typing baseline and all 1,904 harness cases pass.
 At patch 36, 3,826 offline and 366 focused tests pass. Both subprocess shutdown
 regressions and eight malformed-identity cases fail on the parent and pass here.
 Strict conformance, signatures, unchanged typing and 1,904 harness cases pass.
+
+At patch 37, 3,830 offline and 370 focused tests pass. Cross-loop blocked reads
+stay at four workers while the parent grows from eight to sixteen. Cancellation,
+capacity recovery and start-failure release pass. Strict checks, unchanged typing
+and 1,904 contract-harness cases pass without provider calls.
