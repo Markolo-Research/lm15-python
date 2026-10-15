@@ -25,6 +25,7 @@ rewritten.
 
 from __future__ import annotations
 
+import contextvars
 import os
 import secrets
 import threading
@@ -1033,7 +1034,7 @@ class AsyncAuth:
                 pass  # A cancelled read may finish after its loop has closed.
 
         try:
-            threading.Thread(target=read, daemon=True, name="lm15-read").start()
+            threading.Thread(target=contextvars.copy_context().run, args=(read,), daemon=True, name="lm15-read").start()
         except BaseException:
             slots.release()
             raise
@@ -1082,7 +1083,7 @@ class AsyncAuth:
         while not slots.acquire(blocking=False):
             await asyncio.sleep(0.01)
         try:
-            threading.Thread(target=run_login, daemon=True, name="lm15-login").start()
+            threading.Thread(target=contextvars.copy_context().run, args=(run_login,), daemon=True, name="lm15-login").start()
         except BaseException:
             slots.release()
             raise

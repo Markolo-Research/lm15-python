@@ -1863,3 +1863,20 @@ async def test_abandoned_login_workers_are_bounded(monkeypatch):
         await asyncio.gather(*tasks, return_exceptions=True)
     connection = await asyncio.wait_for(auths[-1].login("groq", "api_key", answers={"key": "test-key"}), timeout=1)
     assert connection.provider == "groq"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["status", "connections", "login"])
+async def test_daemon_auth_workers_preserve_caller_context(monkeypatch, method):
+    from contextvars import ContextVar
+    from lm15.login import AsyncAuth
+
+    tenant = ContextVar("tenant", default="default")
+    auth = AsyncAuth.memory()
+    monkeypatch.setattr(auth.sync, method, lambda *args, **kwargs: tenant.get())
+    token = tenant.set("request-tenant")
+    try:
+        result = await getattr(auth, method)(*(["groq"] if method != "connections" else []))
+        assert result == "request-tenant"
+    finally:
+        tenant.reset(token)
