@@ -75,3 +75,41 @@ async def test_initial_adapter_construction_runs_off_loop(monkeypatch, operation
             task.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await task
+
+
+@pytest.mark.asyncio
+async def test_close_waits_for_construction_without_blocking_loop():
+    router = AsyncLMRouter()
+    entered, release = threading.Event(), threading.Event()
+    loop_thread = threading.get_ident()
+    closed = []
+
+    class Transport:
+        async def aclose(self):
+            closed.append(threading.get_ident())
+
+    def construct():
+        with router._lock:
+            entered.set()
+            assert release.wait(3), "aclose blocked the event loop"
+            router._transport = Transport()
+            router._lms["test"] = object()
+
+    construction = asyncio.create_task(asyncio.to_thread(construct))
+    closing = None
+    try:
+        assert await asyncio.to_thread(entered.wait, 1)
+        closing = asyncio.create_task(router.aclose())
+        await asyncio.sleep(0.02)
+        assert not closing.done()
+        release.set()
+        await construction
+        await closing
+        assert closed == [loop_thread]
+        assert router._transport is None
+        assert router._lms == {}
+    finally:
+        release.set()
+        await construction
+        if closing is not None:
+            await closing

@@ -1548,9 +1548,15 @@ class AsyncLMRouter:
         """Close every connection this router holds.  An async transport's
         pool belongs to the loop that used it; call this on that loop
         before it ends (one router per loop).  Idempotent."""
-        with self._lock:
-            transport, self._transport = self._transport, None
-            self._lms.clear()
+        import asyncio
+
+        def detach_transport():
+            with self._lock:
+                transport, self._transport = self._transport, None
+                self._lms.clear()
+                return transport
+
+        transport = await asyncio.to_thread(detach_transport)
         aclose = getattr(transport, "aclose", None)
         if callable(aclose):
             await aclose()
