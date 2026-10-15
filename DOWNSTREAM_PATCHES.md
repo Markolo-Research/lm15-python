@@ -254,7 +254,12 @@ the pinned 32-program mypy gate pass with no baseline increase.
 65. `bcf8a48f3da00fdb4e90ebdfde7b12695ad02bda`: reject counters beyond
     the runtime integer-conversion limit before exposing stored records.
 
-Patches 12–65 are ordered descendants of patch 11 and must be replayed too.
+66. `966b8a364aa532d9a20210ca110d3b2d0e792314`: normalize recognized
+    stored provider and slot aliases, rejecting ambiguous duplicate spellings.
+67. `acc18dde4fc9ebc57858c4d2c30d782e0567cd7c`: return normalized mutation
+    values without a fallible read after the write has committed.
+
+Patches 12–67 are ordered descendants of patch 11 and must be replayed too.
 The earlier suite counts above describe historical intermediate stacks.
 At patch 24, strict offline login/subscription validation passed 113 tests,
 with two live tests excluded, zero external network attempts, zero new typing
@@ -394,3 +399,8 @@ At patch 65, 3,927 full offline tests and 467 focused tests pass. Oversized
 counter, legacy-store, manager lifecycle, alias and DataPart typing controls
 pass; all 42 corrected independent renewal controls pass. Typing 450/450,
 generator, signatures and diff checks pass. No provider calls were made.
+
+At patch 67, 3,931 full offline tests, 471 focused tests, 49 alias controls
+and 85 unknown-schema controls pass. Prior source reproduces the post-write
+fault; canonical private return values and atomic failures pass. Typing
+450/450, signatures and diff checks pass. No provider calls were made.
