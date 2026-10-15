@@ -175,7 +175,10 @@ the pinned 32-program mypy gate pass with no baseline increase.
 35. `d1fdef4e419b2275ba963635affde2eea1b3c703`: keep read-only async status
     and connections promptly cancellable while mutating workers remain drained.
 
-Patches 12–35 are ordered descendants of patch 11 and must be replayed too.
+36. `bdb149c6c6a8e1273400341ab2317b82814a9bf8`: isolate cancellable reads
+    from default-executor shutdown and validate stored connection identifiers.
+
+Patches 12–36 are ordered descendants of patch 11 and must be replayed too.
 The earlier suite counts above describe historical intermediate stacks.
 At patch 24, strict offline login/subscription validation passed 113 tests,
 with two live tests excluded, zero external network attempts, zero new typing
@@ -225,3 +228,7 @@ No provider calls were made.
 At patch 35, 3,816 offline and 356 focused tests pass, including both read-only
 cancellation regressions (red on parent). Mutation draining remains covered.
 Strict checks, unchanged typing baseline and all 1,904 harness cases pass.
+
+At patch 36, 3,826 offline and 366 focused tests pass. Both subprocess shutdown
+regressions and eight malformed-identity cases fail on the parent and pass here.
+Strict conformance, signatures, unchanged typing and 1,904 harness cases pass.
