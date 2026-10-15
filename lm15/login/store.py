@@ -141,8 +141,20 @@ def validate_document(data: Any, *, where: str) -> Document:
             except (TypeError, ValueError, OverflowError) as exc:
                 raise _storage_error(f"Credential store at {where} has malformed slot fields; not touching it.") from exc
     for key, value in data.items():
-        if key != META_KEY and not isinstance(value, dict):
+        if key == META_KEY:
+            continue
+        if not isinstance(value, dict):
             raise _storage_error(f"Credential store at {where}: entry {key!r} is not an object; not touching it.")
+        kind = value.get("type")
+        # Validate recipe inputs without probing external sources or reading secrets.
+        required = {"api_key": "key", "env": "name", "external": "source", "cloud": "named"}
+        field = required.get(kind) if isinstance(kind, str) else None
+        if field and (not isinstance(value.get(field), str) or not value[field].strip()):
+            raise _storage_error(f"Credential store at {where}: entry {key!r} has malformed recipe material; not touching it.")
+        if kind == "local" and any(
+            name in value and not isinstance(value[name], str) for name in ("key", "base_url")
+        ):
+            raise _storage_error(f"Credential store at {where}: entry {key!r} has malformed local material; not touching it.")
     return data
 
 

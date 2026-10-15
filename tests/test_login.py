@@ -1426,3 +1426,25 @@ async def test_native_cancel_after_commit_admission_preserves_committed_connecti
         assert auth.sync.cancel_login("groq") == "complete"
     finally:
         allow_write.set()
+
+
+@pytest.mark.parametrize("material", [
+    {"type": "api_key"}, {"type": "api_key", "key": []},
+    {"type": "api_key", "key": " "}, {"type": "env"},
+    {"type": "env", "name": 1}, {"type": "external"},
+    {"type": "cloud", "named": []}, {"type": "local", "base_url": []},
+])
+def test_malformed_recipe_material_raises_storage_error(sandbox, material):
+    path = sandbox / "credentials.json"
+    auth = Auth.local(path)
+    auth.set_api_key("openrouter", "test-key")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["openrouter"] = material
+    original = json.dumps(data)
+    path.write_text(original, encoding="utf-8")
+    for inspect in (lambda: auth.status("openrouter"), auth.connections,
+                    lambda: auth.request_auth("openrouter")):
+        with pytest.raises(AuthOperationError) as caught:
+            inspect()
+        assert caught.value.reason == "storage_unavailable"
+    assert path.read_text(encoding="utf-8") == original
