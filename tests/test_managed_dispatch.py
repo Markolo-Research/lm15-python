@@ -404,3 +404,20 @@ def test_managed_cloud_preparations_reuse_identity_scoped_provider(monkeypatch, 
     lm._managed_prepare()
     lm._managed_prepare()
     assert len(providers) == 4
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_managed_local_placeholder_observes_later_configuration(asynchronous):
+    auth = Auth.memory()
+    transport = transport_for("complete", asynchronous)
+    router = (AsyncLMRouter if asynchronous else LMRouter)(RouterConfig(auth=auth, transport=transport, env={}))
+    lm = router.lm("ollama:llama3")
+    invoke(lm, "complete", asynchronous)
+    local(auth, "configured")
+    invoke(lm, "complete", asynchronous)
+    wire_pair(transport.requests[-1], "token-configured", "https://configured.example/v1/chat/completions")
+    auth.logout("ollama")
+    with pytest.raises(AuthOperationError) as error:
+        invoke(lm, "complete", asynchronous)
+    assert error.value.reason == "login_required"
+    assert len(transport.requests) == 2

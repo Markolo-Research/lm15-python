@@ -1090,7 +1090,7 @@ def _build_lm(resolution: Resolution, config: RouterConfig, adapters: Mapping[st
 
 def _build_managed_lm(resolution: Resolution, config: RouterConfig, adapters: Mapping[str, type], cls: type,
                       definition: "ProviderDefinition | None", extra: dict, hosted: bool, base_url: str | None,
-                      *, snapshot=None, cloud_cache=None):
+                      *, snapshot=None, cloud_cache=None, prepared=False):
     """AUTH-15 mode B.  Order: explicit ``api_keys`` entry; explicit named
     cloud identity; the scope's saved connection (renewed per request);
     a keyless local server's placeholder.  Never an environment key, a
@@ -1102,6 +1102,7 @@ def _build_managed_lm(resolution: Resolution, config: RouterConfig, adapters: Ma
     provider = resolution.provider
     original_definition, original_extra, original_url = definition, dict(extra), base_url
     saved = None
+    placeholder = False
     api_key, explicit = _api_keys_entry(config, provider, adapters)
     named = _credentials_entry(config, provider)
     origin: str | None = None
@@ -1114,6 +1115,7 @@ def _build_managed_lm(resolution: Resolution, config: RouterConfig, adapters: Ma
             if exc.reason == "login_required" and definition is not None and definition.placeholder_key is not None \
                     and not auth.status(provider).logged_out:
                 api_key = definition.placeholder_key
+                placeholder = True
                 origin = "the local server's placeholder key"
             elif exc.reason == "login_required" and definition is not None and definition.hosted:
                 raise AuthOperationError(
@@ -1186,18 +1188,18 @@ def _build_managed_lm(resolution: Resolution, config: RouterConfig, adapters: Ma
         lm = cls(api_key=api_key, **extra)
     if origin is not None:
         _set_origin(lm, origin)
-    if saved is not None:
+    if saved is not None or placeholder:
         inner = getattr(lm, "_inner", lm)
-        if snapshot is None:
+        if not prepared:
             def prepare():
                 execution_extra = dict(original_extra, transport=lm.transport, adaptations=lm.adaptations)
                 return _build_managed_lm(
                     resolution, config, adapters, cls, original_definition, execution_extra, hosted,
-                    original_url, snapshot=auth.request_auth(provider), cloud_cache=cloud_cache,
+                    original_url, cloud_cache=cloud_cache, prepared=True,
                 )
             lm._managed_prepare = prepare
             inner._managed_prepare = prepare
-        else:
+        elif saved is not None:
             def admission():
                 auth._admit(saved)
             lm._managed_admit = admission
