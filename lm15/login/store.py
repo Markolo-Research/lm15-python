@@ -128,6 +128,15 @@ def validate_document(data: Any, *, where: str) -> Document:
                 for field in ("attempt", "verification", "renewal_in_flight"):
                     if slot.get(field) is not None and not isinstance(slot[field], dict):
                         raise ValueError(f"{field} must be an object")
+                renewal = slot.get("renewal_in_flight")
+                if renewal is not None:
+                    started = renewal.get("started_at")
+                    revision = renewal.get("revision")
+                    if not isinstance(started, str) or not started.strip():
+                        raise ValueError("renewal started_at must be a timestamp")
+                    datetime.fromisoformat(started.replace("Z", "+00:00"))
+                    if not isinstance(revision, str) or not revision.isdecimal():
+                        raise ValueError("renewal revision must be a nonnegative integer string")
                 verification = slot.get("verification")
                 if verification is not None:
                     if set(verification) - {"result", "checked_at", "check", "detail"}:

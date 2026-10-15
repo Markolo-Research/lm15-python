@@ -193,6 +193,7 @@ def _choose_method(ui: AuthUI, descriptor: ProviderDescriptor, *, allow_unverifi
 def _choose_model(auth: Auth, ui: AuthUI, connection: Connection, *, model: str | None, capability: str | None,
                   router_config: Any) -> ModelSelection:
     if model is not None:
+        model_choices(auth, connection.provider, pinned=(connection.id, connection.identity_generation))
         return ModelSelection(provider=connection.provider, model=model, connection_id=connection.id,
                               identity_generation=connection.identity_generation)
     choices = ()

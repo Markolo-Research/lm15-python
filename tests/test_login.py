@@ -1051,6 +1051,13 @@ def test_external_claude_cli_source_reads_in_place(sandbox: Path, monkeypatch: p
     ("previous_ids", [[]]), ("routes", [1]),
     ("settings", {"project": ["bad"], "location": "us-central1"}),
     ("routes", 1), ("attempt", "bad"),
+    *[("renewal_in_flight", value) for value in (
+        {}, {"started_at": "2026-01-01T00:00:00Z"}, {"revision": "1"},
+        {"started_at": "bad", "revision": "1"},
+        {"started_at": "2026-01-01T00:00:00Z", "revision": []},
+        {"started_at": "2026-01-01T00:00:00Z", "revision": "-1"},
+        {"started_at": "2026-01-01T00:00:00Z", "revision": True},
+    )],
     ("verification", {}), ("verification", {"foo": "bar"}),
     ("verification", {"result": "invalid"}), ("verification", {"result": []}),
     ("verification", {"result": "valid", "detail": 1}),
@@ -2122,7 +2129,8 @@ def test_bound_connection_property_never_exposes_replacement(replacement):
 
 
 @pytest.mark.parametrize("replacement", ["identity", "generation", "logout"])
-def test_interactive_model_catalog_rejects_changed_selection(replacement):
+@pytest.mark.parametrize("model", [None, "explicit-model"])
+def test_interactive_model_catalog_rejects_changed_selection(replacement, model):
     from lm15.interactive import _choose_model
 
     auth = Auth.memory()
@@ -2140,7 +2148,7 @@ def test_interactive_model_catalog_rejects_changed_selection(replacement):
         auth.logout("groq")
     try:
         with pytest.raises(AuthOperationError) as caught:
-            _choose_model(auth, ScriptUI(), original, model=None, capability=None,
+            _choose_model(auth, ScriptUI(), original, model=model, capability=None,
                           router_config=RouterConfig(transport=transport))
         assert caught.value.reason == ("login_required" if replacement == "logout" else "connection_changed")
         assert transport.requests == []
