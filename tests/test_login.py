@@ -2042,4 +2042,4 @@ def test_managed_store_preserves_unrelated_provider_entries(sandbox, custom):
     assert {item.provider for item in auth.connections()} == {"xai"}
     assert path.read_bytes() == before
     auth.set_api_key("groq", "groq-test-key")
-    assert json.loads(path.read_text())["custom-provider"] == custom
+    assert json.loads(path.read_text(encoding="utf-8"))["custom-provider"] == custom
