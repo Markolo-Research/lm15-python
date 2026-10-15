@@ -960,6 +960,25 @@ def test_bound_client_keyword_model_cannot_override_selection(sandbox: Path) -> 
     assert transport.requests == []
 
 
+def test_model_choices_reject_replacement_before_catalog_request(monkeypatch):
+    from lm15 import router as router_module
+
+    auth = Auth.memory()
+    original = auth.set_api_key("groq", "old-test-key")
+    transport = FakeTransport([_models_reply()])
+    router_type = router_module.LMRouter
+
+    def replace_before_router(config):
+        auth.set_api_key("groq", "new-test-key", replace=original.id)
+        return router_type(config)
+
+    monkeypatch.setattr(router_module, "LMRouter", replace_before_router)
+    with pytest.raises(AuthOperationError) as error:
+        model_choices(auth, "groq", refresh=True, router_config=RouterConfig(transport=transport))
+    assert error.value.reason == "connection_changed"
+    assert transport.requests == []
+
+
 def test_model_choices_carry_provenance_and_capability_filter(sandbox: Path) -> None:
     clock = Clock()
     auth = make_auth(sandbox, clock)
@@ -1594,3 +1613,4 @@ def test_canonical_provider_settings_win_independent_of_insertion_order(canonica
     assert _settings_entry(RouterConfig(settings=dict(entries)), "vertex-anthropic") == {
         "project": "canonical-project"
     }
+

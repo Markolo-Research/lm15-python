@@ -81,7 +81,9 @@ def model_choices(
     if refresh:
         from ..router import LMRouter, RouterConfig
 
-        config = replace(router_config or RouterConfig(), auth=auth)
+        selection = ModelSelection(provider=connection.provider, model="catalog", connection_id=connection.id,
+                                   identity_generation=connection.identity_generation)
+        config = replace(router_config or RouterConfig(), auth=pinned_auth(auth, selection))
         router = LMRouter(config)
         try:
             lm = router.lm(f"{connection.provider}:catalog")
@@ -219,3 +221,4 @@ class BoundClient:
 
     def __exit__(self, *_exc: Any) -> None:
         self.close()
+
