@@ -432,6 +432,7 @@ def test_prepared_local_placeholder_rejects_scope_change(change):
     if change == "configure":
         local(auth, "configured")
     else:
+        local(auth, "configured")
         auth.logout("ollama")
     with pytest.raises(AuthOperationError) as error:
         prepared.complete(request())
