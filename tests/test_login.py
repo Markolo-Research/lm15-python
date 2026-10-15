@@ -1880,3 +1880,32 @@ async def test_daemon_auth_workers_preserve_caller_context(monkeypatch, method):
         assert result == "request-tenant"
     finally:
         tenant.reset(token)
+
+
+@pytest.mark.asyncio
+async def test_queued_login_honors_external_cancel_event(monkeypatch):
+    import asyncio
+    from lm15.login import AsyncAuth, manager
+
+    slots = threading.BoundedSemaphore(1)
+    slots.acquire()
+    monkeypatch.setattr(manager, "_ASYNC_LOGIN_SLOTS", slots)
+    auth = AsyncAuth.memory()
+    cancel = threading.Event()
+    task = asyncio.create_task(auth.login("groq", "api_key", ui=ScriptUI(), cancel=cancel))
+    try:
+        await asyncio.sleep(0.03)
+        assert not task.done()
+        cancel.set()
+        with pytest.raises(LoginCancelled):
+            await asyncio.wait_for(task, timeout=1)
+        assert auth.sync.connections() == []
+    finally:
+        slots.release()
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    with pytest.raises(LoginCancelled):
+        await auth.login("groq", "api_key", ui=ScriptUI(), cancel=cancel)
+    assert slots.acquire(blocking=False)
+    slots.release()

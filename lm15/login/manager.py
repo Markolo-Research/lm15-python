@@ -1081,8 +1081,12 @@ class AsyncAuth:
 
         # An uninterruptible terminal prompt must not hold asyncio.run() shutdown.
         while not slots.acquire(blocking=False):
+            if cancel.is_set():
+                raise LoginCancelled()
             await asyncio.sleep(0.01)
         try:
+            if cancel.is_set():
+                raise LoginCancelled()
             threading.Thread(target=contextvars.copy_context().run, args=(run_login,), daemon=True, name="lm15-login").start()
         except BaseException:
             slots.release()
