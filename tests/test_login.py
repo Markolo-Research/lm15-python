@@ -2071,3 +2071,23 @@ def test_login_cannot_reserve_after_auth_closes(monkeypatch, stage):
         auth.login("groq", "api_key", ui=ScriptUI(), answers={"key": "test-key"})
     assert auth.store.read() == {}
     assert auth._active == {}
+
+
+@pytest.mark.parametrize("stage", ["store_reserve", "transaction"])
+def test_configure_cannot_reserve_after_auth_closes(monkeypatch, stage):
+    auth = Auth.memory()
+    if stage == "store_reserve":
+        original = auth.store.reserve
+        def reserve():
+            original()
+            auth.close()
+        monkeypatch.setattr(auth.store, "reserve", reserve)
+    else:
+        original = auth.store.mutate
+        def mutate(fn):
+            auth.close()
+            return original(fn)
+        monkeypatch.setattr(auth.store, "mutate", mutate)
+    with pytest.raises(AuthOperationError, match="closed"):
+        auth.configure("groq", method="api_key", answers={"key": "test-key"})
+    assert auth.store.read() == {}

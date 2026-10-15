@@ -484,9 +484,9 @@ class Auth:
             slot.attempt = {"id": attempt_id, "expected_generation": str(slot.generation),
                             "started_at_s": now, "lifetime_s": float(lifetime_s)}
             # Publish the local event under the same store lock as its reservation.
-            if cancel is not None:
-                with self._lock:
-                    self._check_open()
+            with self._lock:
+                self._check_open()
+                if cancel is not None:
                     self._active[provider] = cancel
             return self._put(document, slot, material)
 
