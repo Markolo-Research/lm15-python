@@ -1475,3 +1475,17 @@ def test_oauth_material_without_optional_fields_is_valid():
 
     document = {"xai": {"type": "oauth", "access": "test-token"}}
     assert validate_document(document, where="test") == document
+
+
+
+@pytest.mark.parametrize("material", [{}, {"type": None}, {"type": []}, {"type": "unknown"}])
+def test_unknown_material_type_raises_storage_error(sandbox, material):
+    path = sandbox / "credentials.json"
+    original = json.dumps({"xai": material})
+    path.write_text(original, encoding="utf-8")
+    auth = Auth.local(path)
+    for inspect in (lambda: auth.status("xai"), auth.connections, lambda: auth.request_auth("xai")):
+        with pytest.raises(AuthOperationError) as caught:
+            inspect()
+        assert caught.value.reason == "storage_unavailable"
+    assert path.read_text(encoding="utf-8") == original
