@@ -156,7 +156,11 @@ the pinned 32-program mypy gate pass with no baseline increase.
     adapters off the event loop when async close waits for construction; close
     the detached async transport on its owning event loop.
 
-Patches 12–29 are ordered descendants of patch 11 and must be replayed too.
+30. `262c781ecbfde592e52b594a25c22e7ba35a1b0c`: retain ownership of async
+    transport detachment and close through repeated cancellation, then propagate
+    cancellation after cleanup completes.
+
+Patches 12–30 are ordered descendants of patch 11 and must be replayed too.
 The earlier suite counts above describe historical intermediate stacks.
 At patch 24, strict offline login/subscription validation passed 113 tests,
 with two live tests excluded, zero external network attempts, zero new typing
@@ -184,3 +188,8 @@ At patch 29, 332 offline async/login/router tests pass (three live tests
 excluded). The close regression fails on the prior base and passes with the
 correction. All 32 user typing examples remain clean; package typing matches
 the unchanged 451-finding baseline. No live provider calls were made.
+
+At patch 30, 334 offline async/login/router tests and eight focused async tests
+pass. Both cancellation regressions fail on the prior base. Three live tests
+remain excluded; 32 typing examples are clean and the package baseline is
+unchanged. No live provider calls were made.
