@@ -239,7 +239,14 @@ the pinned 32-program mypy gate pass with no baseline increase.
 59. `7648a6c75cbea088b21c183148801a6578920c77`: validate present empty
     attempt markers rather than treating them as absent.
 
-Patches 12–59 are ordered descendants of patch 11 and must be replayed too.
+60. `52f0157c63d60393e19f2ca856bad3b1d462f7a5`: prepare local placeholder
+    operations against current managed configuration.
+61. `2dc6d9d3eb4551276ba23c19f941aa714f154471`: admit prepared placeholders
+    only while the managed scope remains unconfigured and not logged out.
+62. `e8c9f6da16c084c8089f1149fb1b1b38235acf52`: exercise logout after
+    configuration in the admission regression fixture.
+
+Patches 12–62 are ordered descendants of patch 11 and must be replayed too.
 The earlier suite counts above describe historical intermediate stacks.
 At patch 24, strict offline login/subscription validation passed 113 tests,
 with two live tests excluded, zero external network attempts, zero new typing
@@ -364,3 +371,8 @@ At patch 59, 3,887 full offline tests, 427 focused tests and 14 independent
 controls pass. Empty-marker reads and atomic writes fail on prior source;
 absent/null and manager-produced markers remain supported. Typing 450/450,
 signatures and diff checks pass. No provider calls were made.
+
+At patch 62, 3,891 full offline tests, 431 focused tests and all 24 dispatch
+race probes pass. Fallback, explicit overrides, cancellation, FileStore,
+cache and rotation controls pass. Typing 450/450, signatures and cumulative
+diff checks pass. No provider calls were made.
