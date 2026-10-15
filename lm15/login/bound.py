@@ -158,7 +158,13 @@ class BoundClient:
 
     @property
     def connection(self) -> Connection | None:
-        return self.auth.status(self.selection.provider).connection
+        connection = self.auth.status(self.selection.provider).connection
+        if connection is not None and (
+            connection.id != self.selection.connection_id
+            or connection.identity_generation != self.selection.identity_generation
+        ):
+            return None
+        return connection
 
     # ─── requests ─────────────────────────────────────────────────────
 

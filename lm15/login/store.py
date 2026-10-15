@@ -108,6 +108,8 @@ def validate_document(data: Any, *, where: str) -> Document:
             raise _storage_error(f"Credential store at {where} has malformed slot metadata; not touching it.")
         for slot in slots.values():
             try:
+                if slot.get("state", "ready") not in ("ready", "needs_login", "indeterminate"):
+                    raise ValueError("unknown slot lifecycle state")
                 connection_id = slot.get("connection_id")
                 if connection_id is not None and (not isinstance(connection_id, str) or not connection_id.strip()):
                     raise ValueError("connection_id must be a nonempty string or null")

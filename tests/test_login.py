@@ -1046,6 +1046,7 @@ def test_external_claude_cli_source_reads_in_place(sandbox: Path, monkeypatch: p
 
 @pytest.mark.parametrize(("field", "value"), [
     ("generation", "bad"), ("revision", []), ("settings", 1),
+    *[("state", value) for value in ("needs_logni", "indetermiante", "", None, False, [], {})],
     *[("connection_id", value) for value in ([], {}, 1, False, "", " ")],
     ("previous_ids", [[]]), ("routes", [1]),
     ("settings", {"project": ["bad"], "location": "us-central1"}),
@@ -2092,3 +2093,28 @@ def test_configure_cannot_reserve_after_auth_closes(monkeypatch, stage):
     with pytest.raises(AuthOperationError, match="closed"):
         auth.configure("groq", method="api_key", answers={"key": "test-key"})
     assert auth.store.read() == {}
+
+
+@pytest.mark.parametrize("replacement", ["identity", "generation", "logout"])
+def test_bound_connection_property_never_exposes_replacement(replacement):
+    auth = Auth.memory()
+    original = auth.set_api_key("groq", "original-test-key")
+    selection = ModelSelection(provider="groq", model="test-model", connection_id=original.id,
+                               identity_generation=original.identity_generation)
+    client = BoundClient(auth, selection, router_config=RouterConfig(transport=FakeTransport([])))
+    try:
+        assert client.connection == original
+        if replacement == "identity":
+            auth.set_api_key("groq", "replacement-test-key", replace=original.id)
+        elif replacement == "generation":
+            def advance_generation(document):
+                slot = document["_lm15"]["slots"]["groq"]
+                slot["generation"] = str(int(slot["generation"]) + 1)
+            auth.store.mutate(advance_generation)
+        else:
+            auth.logout("groq")
+        assert client.connection is None
+        assert client.selection == selection
+    finally:
+        client.close()
+        auth.close()
