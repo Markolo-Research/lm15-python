@@ -206,7 +206,12 @@ the pinned 32-program mypy gate pass with no baseline increase.
 47. `c32e5b4a50f40c33bbcf6980ce133c9d721c9813`: specify UTF-8 in the shared
     credential preservation regression.
 
-Patches 12–47 are ordered descendants of patch 11 and must be replayed too.
+48. `e2d60d95d3239af975997927c40e993508541b15`: preserve cancellation on
+    transport cleanup failure and reject login reservation after Auth closure.
+49. `d96422a9343f86835b9908def211728e3633e0da`: enforce closure under the
+    reservation lock for configure operations without a cancellation event.
+
+Patches 12–49 are ordered descendants of patch 11 and must be replayed too.
 The earlier suite counts above describe historical intermediate stacks.
 At patch 24, strict offline login/subscription validation passed 113 tests,
 with two live tests excluded, zero external network attempts, zero new typing
@@ -295,3 +300,7 @@ skips and seven live exclusions. Both shared-store regressions and 73 independen
 store probes pass, preserving unrelated entries while malformed recognized
 provider material fails closed. Unchanged typing, strict checks and all 1,904
 contract cases pass. No provider calls were made.
+
+At patch 49, 3,857 full offline tests, 397 focused tests, seven supplied
+regressions and seven real race probes pass. The parent reproduces the configure
+race; strict gates and the unchanged typing baseline pass. No provider calls.
