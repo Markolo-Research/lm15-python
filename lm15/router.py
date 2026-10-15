@@ -1161,13 +1161,14 @@ def _build_managed_lm(resolution: Resolution, config: RouterConfig, adapters: Ma
             if cloud_cache is None:
                 cloud_cache = (threading.Lock(), {})
             cache_lock, cached = cloud_cache
+            assert definition is not None
             identity = (connection.id, connection.identity_generation) if connection is not None else None
             key = (identity, named, cache_key(definition.access, ctx))
             with cache_lock:
-                if cached.get("key") != key:
+                if cached.get("key") != key or cached.get("env") != ctx.env:
                     value = credential_provider(definition.access, ctx, named=named)
                     cached.clear()  # Retain only this adapter's current identity.
-                    cached.update(key=key, value=value)
+                    cached.update(key=key, env=dict(ctx.env), value=value)
                 api_key = cached["value"]
         if api_key is None:
             raise AuthOperationError(

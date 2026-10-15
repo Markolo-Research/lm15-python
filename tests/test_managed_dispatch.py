@@ -385,7 +385,8 @@ def test_managed_cloud_preparations_reuse_identity_scoped_provider(monkeypatch, 
     auth = Auth.memory()
     first = auth.configure("vertex-anthropic", method="cloud", answers={"named": "environment"},
                            settings={"project": "saved-project", "location": "us-central1"})
-    router = (AsyncLMRouter if asynchronous else LMRouter)(RouterConfig(auth=auth, env={}))
+    env = {}
+    router = (AsyncLMRouter if asynchronous else LMRouter)(RouterConfig(auth=auth, env=env))
     lm = router.lm("vertex-anthropic:claude-test")
     lm._managed_prepare()
     lm._managed_prepare()
@@ -395,3 +396,11 @@ def test_managed_cloud_preparations_reuse_identity_scoped_provider(monkeypatch, 
     lm._managed_prepare()
     lm._managed_prepare()
     assert len(providers) == 2
+    env["GOOGLE_APPLICATION_CREDENTIALS"] = "/fake/rotated-credentials.json"
+    lm._managed_prepare()
+    lm._managed_prepare()
+    assert len(providers) == 3
+    env["AZURE_CLIENT_SECRET"] = "rotated-fake-secret"
+    lm._managed_prepare()
+    lm._managed_prepare()
+    assert len(providers) == 4
