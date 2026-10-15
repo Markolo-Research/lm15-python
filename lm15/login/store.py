@@ -148,8 +148,8 @@ def validate_document(data: Any, *, where: str) -> Document:
         kind = value.get("type")
         # Validate recipe inputs without probing external sources or reading secrets.
         required = {"api_key": "key", "env": "name", "external": "source", "cloud": "named"}
-        field = required.get(kind) if isinstance(kind, str) else None
-        if field and (not isinstance(value.get(field), str) or not value[field].strip()):
+        recipe_field = required.get(kind) if isinstance(kind, str) else None
+        if recipe_field and (not isinstance(value.get(recipe_field), str) or not value[recipe_field].strip()):
             raise _storage_error(f"Credential store at {where}: entry {key!r} has malformed recipe material; not touching it.")
         if kind == "local" and any(
             name in value and not isinstance(value[name], str) for name in ("key", "base_url")
