@@ -1861,7 +1861,7 @@ async def test_abandoned_login_workers_are_bounded(monkeypatch):
     finally:
         release.set()
         await asyncio.gather(*tasks, return_exceptions=True)
-    connection = await asyncio.wait_for(auths[-1].login("groq", "api_key", answers={"key": "test-key"}), timeout=1)
+    connection = await asyncio.wait_for(auths[-1].login("groq", "api_key", ui=ScriptUI(), answers={"key": "test-key"}), timeout=1)
     assert connection.provider == "groq"
 
 
