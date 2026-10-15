@@ -1046,6 +1046,8 @@ def test_external_claude_cli_source_reads_in_place(sandbox: Path, monkeypatch: p
 
 @pytest.mark.parametrize(("field", "value"), [
     ("generation", "bad"), ("revision", []), ("settings", 1),
+    *[("connection_id", value) for value in ([], {}, 1, False, "", " ")],
+    ("previous_ids", [[]]), ("routes", [1]),
     ("settings", {"project": ["bad"], "location": "us-central1"}),
     ("routes", 1), ("attempt", "bad"),
     ("verification", {}), ("verification", {"foo": "bar"}),
@@ -1740,3 +1742,41 @@ async def test_read_only_async_auth_cancellation_is_prompt(monkeypatch, method):
             await operation
         except asyncio.CancelledError:
             pass
+
+
+@pytest.mark.parametrize("method", ["connections", "status"])
+def test_cancelled_auth_read_does_not_hold_runner_shutdown(method):
+    import subprocess
+    import sys
+
+    script = """
+import asyncio
+import threading
+import sys
+from lm15.login import AsyncAuth
+
+entered = threading.Event()
+def blocked_read(*args):
+    entered.set()
+    threading.Event().wait()
+
+async def main():
+    auth = AsyncAuth.memory()
+    method = sys.argv[1]
+    setattr(auth.sync, method, blocked_read)
+    operation = asyncio.create_task(getattr(auth, method)(*(["groq"] if method == "status" else [])))
+    while not entered.is_set():
+        await asyncio.sleep(0.01)
+    operation.cancel()
+    try:
+        await operation
+    except asyncio.CancelledError:
+        pass
+
+asyncio.run(main())
+print("shutdown completed")
+"""
+    result = subprocess.run([sys.executable, "-c", script, method], capture_output=True,
+                            text=True, encoding="utf-8", timeout=5)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "shutdown completed"

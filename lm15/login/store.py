@@ -108,6 +108,9 @@ def validate_document(data: Any, *, where: str) -> Document:
             raise _storage_error(f"Credential store at {where} has malformed slot metadata; not touching it.")
         for slot in slots.values():
             try:
+                connection_id = slot.get("connection_id")
+                if connection_id is not None and (not isinstance(connection_id, str) or not connection_id.strip()):
+                    raise ValueError("connection_id must be a nonempty string or null")
                 for field in ("generation", "revision"):
                     value = slot.get(field)
                     int(0 if value is None else value)
@@ -118,6 +121,8 @@ def validate_document(data: Any, *, where: str) -> Document:
                 for field in ("routes", "previous_ids"):
                     if slot.get(field) is not None and not isinstance(slot[field], (list, tuple)):
                         raise ValueError(f"{field} must be a sequence")
+                    if any(not isinstance(value, str) or not value.strip() for value in (slot.get(field) or ())):
+                        raise ValueError(f"{field} must contain nonempty strings")
                 for field in ("attempt", "verification", "renewal_in_flight"):
                     if slot.get(field) is not None and not isinstance(slot[field], dict):
                         raise ValueError(f"{field} must be an object")

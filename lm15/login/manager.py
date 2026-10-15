@@ -997,15 +997,40 @@ class AsyncAuth:
             raise cancellation
         return worker.result()
 
-    async def connections(self):
+    async def _read(self, fn: Callable[..., Any], *args: Any) -> Any:
         import asyncio
 
-        return await asyncio.to_thread(self.sync.connections)
+        loop = asyncio.get_running_loop()
+        result = loop.create_future()
+
+        def deliver(value: Any, error: BaseException | None) -> None:
+            if result.done():
+                return
+            if error is None:
+                result.set_result(value)
+            else:
+                result.set_exception(error)
+
+        def read() -> None:
+            value: Any = None
+            error: BaseException | None = None
+            try:
+                value = fn(*args)
+            except BaseException as exc:
+                error = exc
+            try:
+                loop.call_soon_threadsafe(deliver, value, error)
+            except RuntimeError:
+                pass  # A cancelled read may finish after its loop has closed.
+
+        threading.Thread(target=read, daemon=True, name="lm15-read").start()
+        return await result
+
+    async def connections(self):
+        return await self._read(self.sync.connections)
 
     async def status(self, provider: str):
-        import asyncio
-
-        return await asyncio.to_thread(self.sync.status, provider)
+        return await self._read(self.sync.status, provider)
 
     async def login(self, provider: str, method: Any = None, **kwargs: Any):
         import asyncio
