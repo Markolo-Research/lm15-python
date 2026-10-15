@@ -1594,7 +1594,19 @@ class AsyncLMRouter:
     async def _alm(self, model: str):
         import asyncio
 
-        return await asyncio.to_thread(self.lm, model)
+        construction = asyncio.create_task(asyncio.to_thread(self.lm, model))
+        cancellation = None
+        while not construction.done():
+            try:
+                await asyncio.wait({construction})
+            except asyncio.CancelledError as exc:
+                cancellation = exc
+        if cancellation is not None:
+            # Retrieve any construction error, but preserve the caller's cancellation.
+            if not construction.cancelled():
+                construction.exception()
+            raise cancellation
+        return construction.result()
 
     plan = LMRouter.plan
 

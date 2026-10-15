@@ -167,3 +167,38 @@ async def test_cancelled_close_finishes_cleanup(during_close):
                 await closing
             except asyncio.CancelledError:
                 pass
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", [False, True])
+async def test_cancelled_construction_is_drained(failure, monkeypatch):
+    router = AsyncLMRouter()
+    entered, release, finished = threading.Event(), threading.Event(), threading.Event()
+
+    def construct(model):
+        entered.set()
+        assert release.wait(3)
+        finished.set()
+        if failure:
+            raise ValueError("construction failed")
+        return object()
+
+    monkeypatch.setattr(router, "lm", construct)
+    operation = asyncio.create_task(router._alm("groq:test"))
+    try:
+        assert await asyncio.to_thread(entered.wait, 1)
+        operation.cancel()
+        await asyncio.sleep(0.02)
+        operation.cancel()
+        await asyncio.sleep(0.02)
+        assert not operation.done()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await operation
+        assert finished.is_set()
+    finally:
+        release.set()
+        try:
+            await operation
+        except asyncio.CancelledError:
+            pass
