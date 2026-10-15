@@ -169,3 +169,23 @@ def flow_for_material(provider: str, material: Material) -> ProviderFlow:
     if account is not None:
         return account
     return recipe
+
+
+
+def accepts_material(provider: str, material: Material) -> bool:
+    """Check the stored shape against the same flow inventory used for login."""
+    canonical = canonical_provider(provider)
+    entry = _table().get(canonical)
+    if entry is None:
+        return False
+    description, _recipe, account = entry
+    kind = material.get("type")
+    minted = material.get("minted", False)
+    if not isinstance(minted, bool):
+        return False
+    if minted:
+        return canonical == "openrouter" and kind == "api_key" and account is not None
+    if kind == "oauth":
+        return account is not None and canonical != "openrouter"
+    return any(method.id == kind or (kind == "external" and method.id.startswith("external:"))
+               for method in description.methods)

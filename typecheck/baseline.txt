@@ -237,7 +237,7 @@
 2 lm15/router.py|misc|Invalid self argument "AsyncLMRouter" to attribute function "request_from_openai_chat" with type "def request_from_openai_chat(LMRouter, str, object, /, **kwargs: Any) -> tuple[Request, object]"
 1 lm15/router.py|no-redef|Name "origin" already defined on line N
 1 lm15/router.py|union-attr|Item "None" of "HostSpec | None" has no attribute "settings"
-11 lm15/router.py|union-attr|Item "None" of "ProviderDefinition | None" has no attribute "access"
+10 lm15/router.py|union-attr|Item "None" of "ProviderDefinition | None" has no attribute "access"
 4 lm15/router.py|union-attr|Item "None" of "ProviderDefinition | None" has no attribute "compat"
 1 lm15/serde.py|arg-type|Argument "audio" to "SpeechGenerationResponse" has incompatible type "TextPart | ImagePart | AudioPart | VideoPart | DocumentPart | <7 more items>"; expected "AudioPart"
 1 lm15/serde.py|arg-type|Argument "system" to "LiveConfig" has incompatible type "Any | tuple[TextPart | ImagePart | AudioPart | VideoPart | DocumentPart | <7 more items>, ...] | None"; expected "str | TextPart | ImagePart | AudioPart | VideoPart | DocumentPart | BinaryPart | DataPart | Sequence[str | TextPart | ImagePart | AudioPart | VideoPart | DocumentPart | BinaryPart | DataPart] | None"

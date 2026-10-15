@@ -76,7 +76,7 @@ import os
 import threading
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
-from typing import AsyncIterator, Iterator, Literal, Mapping, overload
+from typing import AsyncIterator, Callable, Iterator, Literal, Mapping, ParamSpec, TypeVar, overload
 
 from .result import AsyncResponseStream, ResponseStream
 
@@ -107,6 +107,10 @@ __all__ = [
     "openai_chat_model_string",
     "AsyncLMRouter",
 ]
+
+
+_P = ParamSpec("_P")
+_T = TypeVar("_T")
 
 
 # ---------------------------------------------------------------- rules ----
@@ -929,6 +933,8 @@ def _env_key_for(provider: str, config: RouterConfig, adapters: Mapping[str, typ
 
 def _settings_entry(config: RouterConfig, provider: str) -> Mapping[str, str] | None:
     """The ``settings`` entry for ``provider``, under any spelling of its name."""
+    if config.settings is not None and provider in config.settings:
+        return config.settings[provider]
     for key, value in (config.settings or {}).items():
         if _canonical_provider(key) == provider:
             return value
@@ -988,7 +994,7 @@ def _build_lm(resolution: Resolution, config: RouterConfig, adapters: Mapping[st
         from .cloud.chains import profile_settings
 
         env = config.env if config.env is not None else os.environ
-        given = (config.settings or {}).get(resolution.provider)
+        given = _settings_entry(config, resolution.provider)
         ctx = ChainContext.online(env)
         settings = resolve_settings(definition.access.host, given, env, provider=resolution.provider,
                                     profile=profile_settings(definition.access, ctx), endpoint=base_url)
@@ -1084,21 +1090,24 @@ def _build_lm(resolution: Resolution, config: RouterConfig, adapters: Mapping[st
 
 def _build_managed_lm(resolution: Resolution, config: RouterConfig, adapters: Mapping[str, type], cls: type,
                       definition: "ProviderDefinition | None", extra: dict, hosted: bool, base_url: str | None,
-                      *, snapshot=None):
+                      *, snapshot=None, cloud_cache=None, prepared=False):
     """AUTH-15 mode B.  Order: explicit ``api_keys`` entry; explicit named
     cloud identity; the scope's saved connection (renewed per request);
     a keyless local server's placeholder.  Never an environment key, a
     foreign CLI file or the machine's cloud chain."""
     from .login.manager import Auth, _RequestSnapshot
+    from .login.types import Connection
 
     auth: Auth = config.auth  # type: ignore[assignment]
     provider = resolution.provider
     original_definition, original_extra, original_url = definition, dict(extra), base_url
     saved = None
+    placeholder = False
     api_key, explicit = _api_keys_entry(config, provider, adapters)
     named = _credentials_entry(config, provider)
     origin: str | None = None
     account_id: str | None = None
+    connection: Connection | None = None
     if not explicit and named is None:
         try:
             saved = snapshot if snapshot is not None else auth.request_auth(provider)
@@ -1106,6 +1115,7 @@ def _build_managed_lm(resolution: Resolution, config: RouterConfig, adapters: Ma
             if exc.reason == "login_required" and definition is not None and definition.placeholder_key is not None \
                     and not auth.status(provider).logged_out:
                 api_key = definition.placeholder_key
+                placeholder = True
                 origin = "the local server's placeholder key"
             elif exc.reason == "login_required" and definition is not None and definition.hosted:
                 raise AuthOperationError(
@@ -1139,17 +1149,29 @@ def _build_managed_lm(resolution: Resolution, config: RouterConfig, adapters: Ma
             origin = (f"managed connection {connection.id} ({connection.label})" if connection is not None
                       else "managed connection")
     if hosted:
-        from .cloud.chains import ChainContext, credential_provider, profile_settings
+        from .cloud.chains import ChainContext, cache_key, credential_provider, profile_settings
         from .cloud.hosts import resolve_settings
 
         env = config.env if config.env is not None else os.environ
-        given = (config.settings or {}).get(provider)
+        given = dict(connection.settings) if connection is not None else {}
+        given.update(_settings_entry(config, provider) or {})
         ctx = ChainContext.online(env)
         settings = resolve_settings(definition.access.host, given, env, provider=provider,
                                     profile=profile_settings(definition.access, ctx), endpoint=base_url)
         ctx.settings = settings
         if api_key is None and named is not None:
-            api_key = credential_provider(definition.access, ctx, named=named)
+            if cloud_cache is None:
+                cloud_cache = (threading.Lock(), {})
+            cache_lock, cached = cloud_cache
+            assert definition is not None
+            identity = (connection.id, connection.identity_generation) if connection is not None else None
+            key = (identity, named, cache_key(definition.access, ctx))
+            with cache_lock:
+                if cached.get("key") != key or cached.get("env") != ctx.env:
+                    value = credential_provider(definition.access, ctx, named=named)
+                    cached.clear()  # Retain only this adapter's current identity.
+                    cached.update(key=key, env=dict(ctx.env), value=value)
+                api_key = cached["value"]
         if api_key is None:
             raise AuthOperationError(
                 f"{provider}: no credential for this cloud door under a managed Auth",
@@ -1166,20 +1188,23 @@ def _build_managed_lm(resolution: Resolution, config: RouterConfig, adapters: Ma
         lm = cls(api_key=api_key, **extra)
     if origin is not None:
         _set_origin(lm, origin)
-    if saved is not None:
+    if saved is not None or placeholder:
         inner = getattr(lm, "_inner", lm)
-        if snapshot is None:
+        if not prepared:
             def prepare():
                 execution_extra = dict(original_extra, transport=lm.transport, adaptations=lm.adaptations)
                 return _build_managed_lm(
                     resolution, config, adapters, cls, original_definition, execution_extra, hosted,
-                    original_url, snapshot=auth.request_auth(provider),
+                    original_url, cloud_cache=cloud_cache, prepared=True,
                 )
             lm._managed_prepare = prepare
             inner._managed_prepare = prepare
         else:
             def admission():
-                auth._admit(saved)
+                if saved is not None:
+                    auth._admit(saved)
+                else:
+                    auth._admit_placeholder(provider)
             lm._managed_admit = admission
             inner._managed_admit = admission
     return lm
@@ -1222,7 +1247,7 @@ def _build_planning_lm(resolution: Resolution, config: RouterConfig, adapters: M
         from .cloud.hosts import resolve_settings
 
         env = config.env if config.env is not None else os.environ
-        given = dict((config.settings or {}).get(resolution.provider) or {})
+        given = dict(_settings_entry(config, resolution.provider) or {})
         try:
             settings = resolve_settings(definition.access.host, given, env, provider=resolution.provider, endpoint=base_url)
         except NotConfiguredError:
@@ -1543,12 +1568,32 @@ class AsyncLMRouter:
         """Close every connection this router holds.  An async transport's
         pool belongs to the loop that used it; call this on that loop
         before it ends (one router per loop).  Idempotent."""
-        with self._lock:
-            transport, self._transport = self._transport, None
-            self._lms.clear()
-        aclose = getattr(transport, "aclose", None)
-        if callable(aclose):
-            await aclose()
+        import asyncio
+
+        def detach_transport():
+            with self._lock:
+                transport, self._transport = self._transport, None
+                self._lms.clear()
+                return transport
+
+        async def finish_close():
+            transport = await asyncio.to_thread(detach_transport)
+            aclose = getattr(transport, "aclose", None)
+            if callable(aclose):
+                await aclose()
+
+        cleanup = asyncio.create_task(finish_close())
+        cancellation = None
+        while not cleanup.done():
+            try:
+                await asyncio.wait({cleanup})
+            except asyncio.CancelledError as exc:
+                cancellation = exc
+        if cancellation is not None:
+            if not cleanup.cancelled():
+                cleanup.exception()
+            raise cancellation
+        cleanup.result()
 
     async def __aenter__(self) -> "AsyncLMRouter":
         return self
@@ -1568,19 +1613,49 @@ class AsyncLMRouter:
                 self._lms[resolution.provider] = lm
         return lm
 
+    async def _alm(self, model: str):
+        return await self._construct(self.lm, model)
+
+    async def _construct(self, fn: Callable[_P, _T], *args: _P.args, **kwargs: _P.kwargs) -> _T:
+        import asyncio
+
+        construction = asyncio.create_task(asyncio.to_thread(fn, *args, **kwargs))
+        cancellation = None
+        while not construction.done():
+            try:
+                await asyncio.wait({construction})
+            except asyncio.CancelledError as exc:
+                cancellation = exc
+        if cancellation is not None:
+            # Retrieve any construction error, but preserve the caller's cancellation.
+            if not construction.cancelled():
+                construction.exception()
+            raise cancellation
+        return construction.result()
+
     plan = LMRouter.plan
 
     async def complete(self, request: Request) -> Response:
         resolution = self.resolve(request.model)
-        return await self.lm(request.model).complete(_routed_request(request, resolution))
+        lm = await self._alm(request.model)
+        return await lm.complete(_routed_request(request, resolution))
 
-    def stream(self, request: Request) -> AsyncIterator[StreamEvent]:
+    async def stream(self, request: Request) -> AsyncIterator[StreamEvent]:
         resolution = self.resolve(request.model)
-        return self.lm(request.model).stream(_routed_request(request, resolution))
+        lm = await self._alm(request.model)
+        stream = lm.stream(_routed_request(request, resolution))
+        try:
+            async for event in stream:
+                yield event
+        finally:
+            close = getattr(stream, "aclose", None)
+            if callable(close):
+                await close()
 
     async def cache(self, prefix: Request, *, ttl_seconds: int | None = None, label: str | None = None):
         resolution = self.resolve(prefix.model)
-        cached = await self.lm(prefix.model).cache(_routed_request(prefix, resolution), ttl_seconds=ttl_seconds, label=label)
+        lm = await self._alm(prefix.model)
+        cached = await lm.cache(_routed_request(prefix, resolution), ttl_seconds=ttl_seconds, label=label)
         return replace(cached, provider=resolution.provider)
 
     resolve_openai_chat = LMRouter.resolve_openai_chat
@@ -1603,11 +1678,18 @@ class AsyncLMRouter:
         """
         if not isinstance(stream, bool):
             raise TypeError("stream must be a boolean")
-        request, lm = self.request_from_openai_chat(model, messages, **kwargs)
+        request, lm = await self._construct(self.request_from_openai_chat, model, messages, **kwargs)
         if stream:
             return AsyncResponseStream(lm.stream(request), request)
         return await lm.complete(request)
 
-    def stream_from_openai_chat(self, model: str, messages: object, /, **kwargs) -> AsyncIterator[StreamEvent]:
-        request, lm = self.request_from_openai_chat(model, messages, **kwargs)
-        return lm.stream(request)
+    async def stream_from_openai_chat(self, model: str, messages: object, /, **kwargs) -> AsyncIterator[StreamEvent]:
+        request, lm = await self._construct(self.request_from_openai_chat, model, messages, **kwargs)
+        stream = lm.stream(request)
+        try:
+            async for event in stream:
+                yield event
+        finally:
+            close = getattr(stream, "aclose", None)
+            if callable(close):
+                await close()

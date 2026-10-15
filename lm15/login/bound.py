@@ -57,6 +57,7 @@ def model_choices(
     include_unknown: bool = False,
     registry: Any = None,
     router_config: Any = None,
+    pinned: tuple[str, str] | None = None,
 ) -> tuple[ModelChoice, ...]:
     """The models the saved connection on ``provider`` can select.
 
@@ -64,7 +65,8 @@ def model_choices(
     (``application`` source); ``refresh=True`` fetches the account's own
     list with the saved credential (``provider`` source; renews if due; no
     inference).  With ``capability``, only ``supported`` choices are
-    returned unless ``include_unknown`` is set (AUTH-23).
+    returned unless ``include_unknown`` is set (AUTH-23). ``pinned`` optionally
+    requires the already selected connection id and identity generation.
     """
     if capability is not None and capability not in _CAPABILITIES:
         raise ValueError(f"capability must be one of {sorted(_CAPABILITIES)}")
@@ -75,13 +77,21 @@ def model_choices(
             f"{provider}: no saved connection to list models for", reason="login_required", stage="catalog",
             recovery="restart_login", provider=provider,
         )
+    if pinned is not None and (connection.id, connection.identity_generation) != pinned:
+        raise AuthOperationError(
+            f"{provider}: the selected connection changed before model discovery; choose again",
+            reason="connection_changed", stage="catalog", recovery="select_connection", provider=provider,
+            connection_id=pinned[0],
+        )
     infos: list[Any] = []
     source = "application"
     fetched: str | None = None
     if refresh:
         from ..router import LMRouter, RouterConfig
 
-        config = replace(router_config or RouterConfig(), auth=auth)
+        selection = ModelSelection(provider=connection.provider, model="catalog", connection_id=connection.id,
+                                   identity_generation=connection.identity_generation)
+        config = replace(router_config or RouterConfig(), auth=pinned_auth(auth, selection), api_keys=None, credentials=None)
         router = LMRouter(config)
         try:
             lm = router.lm(f"{connection.provider}:catalog")
@@ -141,7 +151,7 @@ class BoundClient:
         base = router_config if router_config is not None else RouterConfig()
         if base.auth is not None and base.auth is not auth:
             raise ValueError("router_config.auth must be this client's Auth or None")
-        self._router = LMRouter(replace(base, auth=pinned_auth(auth, selection)))
+        self._router = LMRouter(replace(base, auth=pinned_auth(auth, selection), api_keys=None, credentials=None))
 
     def __repr__(self) -> str:
         return f"BoundClient({self.selection.routed!r}, connection={self.selection.connection_id!r})"
@@ -156,7 +166,13 @@ class BoundClient:
 
     @property
     def connection(self) -> Connection | None:
-        return self.auth.status(self.selection.provider).connection
+        connection = self.auth.status(self.selection.provider).connection
+        if connection is not None and (
+            connection.id != self.selection.connection_id
+            or connection.identity_generation != self.selection.identity_generation
+        ):
+            return None
+        return connection
 
     # ─── requests ─────────────────────────────────────────────────────
 

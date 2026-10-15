@@ -80,12 +80,13 @@ def test_imports_without_a_home_directory(tmp_path: Path) -> None:
     env.pop("USERPROFILE", None)
     out = _run(
         """
-        import json, pathlib
+        import json, os, pathlib
 
         def _no_home(self):
             raise RuntimeError("Could not determine home directory.")
 
         pathlib.Path.expanduser = _no_home  # what CPython raises with no HOME and no passwd entry
+        os.path.expanduser = lambda path: path  # os.path leaves ~ unchanged without a home
         from lm15 import auth
         from lm15._authlock import hold_file_lock
         try:

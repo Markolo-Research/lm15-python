@@ -25,6 +25,8 @@ rewritten.
 
 from __future__ import annotations
 
+import contextvars
+import math
 import os
 import secrets
 import threading
@@ -43,6 +45,8 @@ from .types import AuthUI, Connection, ConnectionStatus, LoginMethod, ProviderDe
 __all__ = ["Auth", "AsyncAuth", "ForgetResult", "RENEWAL_LEAD_S"]
 
 RENEWAL_LEAD_S = 300.0  # AUTH-20.3: min(300 s, lifetime / 10)
+_ASYNC_READ_SLOTS = threading.BoundedSemaphore(4)
+_ASYNC_LOGIN_SLOTS = threading.BoundedSemaphore(4)
 
 
 def _now_iso(clock: Callable[[], float]) -> str:
@@ -306,6 +310,7 @@ class Auth:
         cancel: threading.Event | None = None,
         lifetime_s: float = ATTEMPT_LIFETIME_S,
         allow_unverified: bool = False,
+        _attempt_id: str | None = None,
     ) -> Connection:
         """Run one login to completion and save the connection.
 
@@ -319,7 +324,7 @@ class Auth:
         self._check_open()
         descriptor = self.descriptor(provider)
         provider = descriptor.id
-        if not isinstance(lifetime_s, (int, float)) or lifetime_s <= 0:
+        if isinstance(lifetime_s, bool) or not isinstance(lifetime_s, (int, float)) or not math.isfinite(lifetime_s) or lifetime_s <= 0:
             raise ValueError("lifetime_s must be a positive number of seconds")
         chosen = self._choose_method(descriptor, method, ui, allow_unverified=allow_unverified)
         answers = dict(answers or {})
@@ -328,14 +333,14 @@ class Auth:
         deadline = self._monotonic() + float(lifetime_s)
         ctx = LoginContext(ui=ui, deadline=deadline, cancel=cancel, provider=provider, clock=self._monotonic,
                            wall_clock=self._clock, opener=self._opener, sleep=self._sleep)
-        attempt_id = f"at_{secrets.token_urlsafe(16)}"
+        attempt_id = _attempt_id or f"at_{secrets.token_urlsafe(16)}"
         # Reservation (AUTH-17/18): storage proven writable, one active
         # attempt per slot, generation observed — before any browser opens.
+        self._check_open()
         self.store.reserve()
-        expected = self._reserve(provider, attempt_id, replace, lifetime_s)
-        with self._lock:
-            self._active[provider] = cancel
         try:
+            expected = self._reserve(provider, attempt_id, replace, lifetime_s, cancel=cancel)
+            ctx.check()
             for field_ in chosen.fields:
                 if field_.id not in answers:
                     if not field_.required and field_.type != "select":
@@ -349,6 +354,7 @@ class Auth:
             flow = _flow(provider, chosen.id)
             try:
                 result = flow.login(ctx, chosen, settings, answers)
+                ctx.check()
             except LoginCancelled:
                 self._release(provider, attempt_id)
                 raise
@@ -379,7 +385,7 @@ class Auth:
             except LM15Error:
                 self._release(provider, attempt_id)
                 raise
-            return self._commit(provider, attempt_id, expected, chosen, result, settings)
+            return self._commit(provider, attempt_id, expected, chosen, result, settings, cancel=cancel)
         except BaseException:
             # Any exit without a saved connection ends the attempt — Ctrl-C
             # (a notebook's cancel) while waiting on the provider or at a
@@ -390,7 +396,8 @@ class Auth:
             raise
         finally:
             with self._lock:
-                self._active.pop(provider, None)
+                if self._active.get(provider) is cancel:
+                    self._active.pop(provider, None)
 
     def _choose_method(self, descriptor: ProviderDescriptor, method: str | LoginMethod | None, ui: AuthUI, *,
                        allow_unverified: bool) -> LoginMethod:
@@ -440,12 +447,15 @@ class Auth:
             reason="invalid_login_state", stage="interaction", recovery="choose_method", provider=descriptor.id,
         )
 
-    def _reserve(self, provider: str, attempt_id: str, replace: str | None, lifetime_s: float) -> int:
+    def _reserve(self, provider: str, attempt_id: str, replace: str | None, lifetime_s: float,
+                 *, cancel: threading.Event | None = None) -> int:
         """Reserve the slot's single active attempt; return the generation
         the commit must find."""
         now = self._clock()
 
         def reserve(document: dict[str, Any]) -> dict[str, Any] | None:
+            if cancel is not None and cancel.is_set():
+                raise LoginCancelled()
             slot, material = self._view(document, provider)
             pending = slot.attempt
             if pending and pending.get("id") != attempt_id:
@@ -473,13 +483,18 @@ class Auth:
                 )
             slot.attempt = {"id": attempt_id, "expected_generation": str(slot.generation),
                             "started_at_s": now, "lifetime_s": float(lifetime_s)}
+            # Publish the local event under the same store lock as its reservation.
+            with self._lock:
+                self._check_open()
+                if cancel is not None:
+                    self._active[provider] = cancel
             return self._put(document, slot, material)
 
         document = self.store.mutate(reserve)
         slot, _ = self._view(document, provider)
         return slot.generation
 
-    def _release(self, provider: str, attempt_id: str) -> None:
+    def _release(self, provider: str, attempt_id: str, *, suppress_errors: bool = True) -> None:
         def release(document: dict[str, Any]) -> dict[str, Any] | None:
             slot, material = self._view(document, provider)
             if not slot.attempt or slot.attempt.get("id") != attempt_id:
@@ -490,15 +505,19 @@ class Auth:
         try:
             self.store.mutate(release)
         except LM15Error:
-            pass  # releasing a reservation must not mask the real failure
+            if not suppress_errors:
+                raise
+            # Best-effort cleanup must not mask an earlier login failure.
 
     def _commit(self, provider: str, attempt_id: str, expected: int, method: LoginMethod, result: Any,
-                settings: dict[str, str]) -> Connection:
+                settings: dict[str, str], *, cancel: threading.Event | None = None) -> Connection:
         created = _now_iso(self._clock)
         connection_id = f"cn_{secrets.token_urlsafe(12)}"
         routes = tuple(self.descriptor(provider).routes) or (provider,)
 
         def commit(document: dict[str, Any]) -> dict[str, Any] | None:
+            if cancel is not None and cancel.is_set():
+                raise LoginCancelled()
             slot, _material = self._view(document, provider)
             if not slot.attempt or slot.attempt.get("id") != attempt_id:
                 raise AuthOperationError(
@@ -512,7 +531,7 @@ class Auth:
                     reason="connection_changed", stage="persistence", commit_state="not_committed",
                     recovery="select_connection", provider=provider, attempt_id=attempt_id,
                 )
-            merged = {**slot.settings, **settings, **result.settings} if slot.connection_id else {**settings, **result.settings}
+            merged = {**settings, **result.settings}
             previous = slot.previous_ids + ((slot.connection_id,) if slot.connection_id else ())
             new = _Slot(
                 provider=provider, generation=slot.generation + 1, connection_id=connection_id, revision=1,
@@ -552,15 +571,15 @@ class Auth:
             if not slot.attempt:
                 outcome["result"] = "complete" if slot.connection_id else "none"
                 return None
+            with self._lock:
+                event = self._active.get(provider)
+            if event is not None:
+                event.set()
             slot.attempt = None
             outcome["result"] = "cancelled"
             return self._put(document, slot, material)
 
-        self.store.mutate(cancel)  # the durable record first (AUTH-19) …
-        with self._lock:
-            event = self._active.get(provider)
-        if event is not None:
-            event.set()  # … then the running attempt in this process
+        self.store.mutate(cancel)  # Signal the captured attempt while its reservation is locked.
         return outcome["result"]
 
     # ─── setup without a provider round-trip (AUTH-17) ─────────────────
@@ -602,20 +621,21 @@ class Auth:
                     stage="interaction", recovery="provide_input", provider=provider,
                 )
         attempt_id = f"at_{secrets.token_urlsafe(16)}"
+        self._check_open()
         self.store.reserve()
-        expected = self._reserve(provider, attempt_id, replace, 60.0)
-        ctx = LoginContext(ui=_NoUI(), deadline=self._monotonic() + 60.0, provider=provider,
-                           clock=self._monotonic, wall_clock=self._clock, opener=self._opener)
         try:
-            result = _flow(provider, method).login(ctx, chosen, settings, answers)
-        except LoginDenied as exc:
-            self._release(provider, attempt_id)
-            raise AuthOperationError(f"{provider}: {exc}", reason="login_denied", stage="interaction",
-                                     recovery="provide_input", provider=provider) from None
-        except LM15Error:
+            expected = self._reserve(provider, attempt_id, replace, 60.0)
+            ctx = LoginContext(ui=_NoUI(), deadline=self._monotonic() + 60.0, provider=provider,
+                               clock=self._monotonic, wall_clock=self._clock, opener=self._opener)
+            try:
+                result = _flow(provider, method).login(ctx, chosen, settings, answers)
+            except LoginDenied as exc:
+                raise AuthOperationError(f"{provider}: {exc}", reason="login_denied", stage="interaction",
+                                         recovery="provide_input", provider=provider) from None
+            return self._commit(provider, attempt_id, expected, chosen, result, settings)
+        except BaseException:
             self._release(provider, attempt_id)
             raise
-        return self._commit(provider, attempt_id, expected, chosen, result, settings)
 
     # ─── logout (AUTH-19) ──────────────────────────────────────────────
 
@@ -693,7 +713,15 @@ class Auth:
         config = router_config or RouterConfig()
         from dataclasses import replace as _replace
 
-        router = LMRouter(_replace(config, auth=self))
+        connection = self.status(provider).connection
+        from .bound import pinned_auth
+        from .types import ModelSelection
+
+        checked_auth = self if connection is None else pinned_auth(self, ModelSelection(
+            provider=provider, model="verify", connection_id=connection.id,
+            identity_generation=connection.identity_generation,
+        ))
+        router = LMRouter(_replace(config, auth=checked_auth, api_keys=None, credentials=None))
         checked = _now_iso(self._clock)
         try:
             lm = router.lm(f"{provider}:verify")
@@ -703,13 +731,13 @@ class Auth:
             result = Verification(result="rejected", checked_at=checked, check="models", detail=exc.code)
         finally:
             router.close()
-        self._record_verification(provider, result)
+        self._record_verification(provider, result, connection)
         return result
 
-    def _record_verification(self, provider: str, result: Verification) -> None:
+    def _record_verification(self, provider: str, result: Verification, checked: Connection | None) -> None:
         def record(document: dict[str, Any]) -> dict[str, Any] | None:
             slot, material = self._view(document, provider)
-            if slot.connection_id is None:
+            if checked is None or (slot.connection_id, str(slot.generation)) != (checked.id, checked.identity_generation):
                 return None
             slot.verification = {"result": result.result, "checked_at": result.checked_at, "check": result.check,
                                  "detail": result.detail}
@@ -806,6 +834,21 @@ class Auth:
             slot, material = self._view(txn.read(), connection.provider)
             self._check_selected(connection.provider, slot, material,
                                  (connection.id, connection.identity_generation))
+
+    def _admit_placeholder(self, provider: str) -> None:
+        """Admit a keyless local request only while its scope remains unconfigured."""
+        with self.store.transaction() as txn:
+            slot, material = self._view(txn.read(), provider)
+            if slot.logged_out:
+                raise AuthOperationError(
+                    f"{provider}: signed out before local dispatch", reason="login_required",
+                    stage="resolution", recovery="restart_login", provider=provider,
+                )
+            if slot.connection_id is not None or material is not None:
+                raise AuthOperationError(
+                    f"{provider}: a connection was configured before local dispatch", reason="connection_changed",
+                    stage="resolution", recovery="select_connection", provider=provider,
+                )
 
     def _renew(self, provider: str, pinned: tuple[str, str] | None) -> RequestAuth:
         """AUTH-20.4: lock, re-read, reuse a sibling's fresh result, else
@@ -963,16 +1006,134 @@ class AsyncAuth:
         import asyncio
         import functools
 
-        return await asyncio.to_thread(functools.partial(fn, *args, **kwargs))
+        worker = asyncio.create_task(asyncio.to_thread(functools.partial(fn, *args, **kwargs)))
+        cancellation = None
+        while not worker.done():
+            try:
+                await asyncio.wait({worker})
+            except asyncio.CancelledError as exc:
+                cancellation = exc
+        if cancellation is not None:
+            if not worker.cancelled():
+                worker.exception()
+            raise cancellation
+        return worker.result()
+
+    async def _read(self, fn: Callable[..., Any], *args: Any) -> Any:
+        import asyncio
+
+        # Bound blocked reads across Auth instances and event loops. Waiting
+        # callers remain cancellable without consuming another native thread.
+        slots = _ASYNC_READ_SLOTS
+        while not slots.acquire(blocking=False):
+            await asyncio.sleep(0.01)
+        loop = asyncio.get_running_loop()
+        result = loop.create_future()
+
+        def deliver(value: Any, error: BaseException | None) -> None:
+            if result.done():
+                return
+            if error is None:
+                result.set_result(value)
+            else:
+                result.set_exception(error)
+
+        def read() -> None:
+            value: Any = None
+            error: BaseException | None = None
+            try:
+                value = fn(*args)
+            except BaseException as exc:
+                error = exc
+            finally:
+                slots.release()
+            try:
+                loop.call_soon_threadsafe(deliver, value, error)
+            except RuntimeError:
+                pass  # A cancelled read may finish after its loop has closed.
+
+        try:
+            threading.Thread(target=contextvars.copy_context().run, args=(read,), daemon=True, name="lm15-read").start()
+        except BaseException:
+            slots.release()
+            raise
+        return await result
 
     async def connections(self):
-        return await self._run(self.sync.connections)
+        return await self._read(self.sync.connections)
 
     async def status(self, provider: str):
-        return await self._run(self.sync.status, provider)
+        return await self._read(self.sync.status, provider)
 
     async def login(self, provider: str, method: Any = None, **kwargs: Any):
-        return await self._run(self.sync.login, provider, method, **kwargs)
+        import asyncio
+
+        slots = _ASYNC_LOGIN_SLOTS
+        cancel = kwargs.get("cancel") or threading.Event()
+        kwargs["cancel"] = cancel
+        attempt_id = f"at_{secrets.token_urlsafe(16)}"
+        kwargs["_attempt_id"] = attempt_id
+        loop = asyncio.get_running_loop()
+        worker = loop.create_future()
+
+        def deliver(result: Any = None, error: BaseException | None = None) -> None:
+            if worker.done():
+                return
+            if error is None:
+                worker.set_result(result)
+            else:
+                worker.set_exception(error)
+
+        def run_login() -> None:
+            result: Any = None
+            error: BaseException | None = None
+            try:
+                result = self.sync.login(provider, method, **kwargs)
+            except BaseException as exc:
+                error = exc
+            finally:
+                slots.release()
+            try:
+                loop.call_soon_threadsafe(deliver, result, error)
+            except RuntimeError:
+                pass  # The loop closed after cancellation; no result can be delivered.
+
+        # An uninterruptible terminal prompt must not hold asyncio.run() shutdown.
+        while not slots.acquire(blocking=False):
+            self.sync._check_open()
+            if cancel.is_set():
+                raise LoginCancelled()
+            await asyncio.sleep(0.01)
+        try:
+            self.sync._check_open()
+            if cancel.is_set():
+                raise LoginCancelled()
+            threading.Thread(target=contextvars.copy_context().run, args=(run_login,), daemon=True, name="lm15-login").start()
+        except BaseException:
+            slots.release()
+            raise
+        try:
+            return await worker
+        except asyncio.CancelledError:
+            cancel.set()
+            # Invalidate only this reservation; a synchronous prompt may never return.
+            try:
+                provider_id = self.sync.descriptor(provider).id
+            except AuthOperationError as exc:
+                if exc.reason != "method_unavailable":
+                    raise
+                # Discovery failed before this provider could reserve any state.
+                raise asyncio.CancelledError from None
+            cleanup = asyncio.create_task(
+                self._run(self.sync._release, provider_id, attempt_id, suppress_errors=False)
+            )
+            while True:
+                try:
+                    await asyncio.shield(cleanup)
+                    break
+                except asyncio.CancelledError:
+                    continue  # Repeated cancellation must not outpace durable cleanup.
+            raise
 
     async def set_api_key(self, provider: str, key: str, **kwargs: Any):
         return await self._run(self.sync.set_api_key, provider, key, **kwargs)

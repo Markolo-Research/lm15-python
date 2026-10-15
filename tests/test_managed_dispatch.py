@@ -27,6 +27,49 @@ def request(model="llama3"):
     return Request(model=model, messages=(Message.user("hi"),))
 
 
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("spelling", ["vertex-anthropic", "vertex_anthropic"])
+@pytest.mark.parametrize("managed", [False, True])
+def test_managed_cloud_settings_use_canonical_provider_aliases(monkeypatch, asynchronous, spelling, managed):
+    from lm15.cloud import hosts
+
+    resolve_settings = hosts.resolve_settings
+    seen = []
+
+    def resolve(host, given, *args, **kwargs):
+        seen.append(given)
+        return resolve_settings(host, given, *args, **kwargs)
+
+    monkeypatch.setattr(hosts, "resolve_settings", resolve)
+    router = (AsyncLMRouter if asynchronous else LMRouter)(RouterConfig(
+        auth=Auth.memory() if managed else None, env={}, api_keys={"vertex-anthropic": "test-key"},
+        settings={spelling: {"project": "configured-project", "location": "us-central1"}},
+    ))
+    lm = router.lm("vertex-anthropic:claude-test")
+    assert lm.settings["project"] == "configured-project"
+    assert lm.settings["location"] == "us-central1"
+    router.plan(request("vertex-anthropic:claude-test"))
+    assert seen and all(given["project"] == "configured-project" for given in seen)
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("override", [False, True])
+def test_managed_cloud_connection_retains_saved_host_settings(monkeypatch, asynchronous, override):
+    from lm15.cloud import chains
+
+    monkeypatch.setattr(chains, "credential_provider", lambda *args, **kwargs: "test-key")
+    monkeypatch.setattr(chains, "profile_settings", lambda *args, **kwargs: {})
+    auth = Auth.memory()
+    auth.configure("vertex-anthropic", method="cloud", answers={"named": "environment"},
+                   settings={"project": "saved-project", "location": "us-central1"})
+    explicit = {"vertex_anthropic": {"project": "explicit-project"}} if override else {}
+    lm = (AsyncLMRouter if asynchronous else LMRouter)(RouterConfig(auth=auth, env={}, settings=explicit)).lm(
+        "vertex-anthropic:claude-test"
+    )
+    assert lm.settings["project"] == ("explicit-project" if override else "saved-project")
+    assert lm.settings["location"] == "us-central1"
+
+
 def local(auth, label, *, replace=None):
     # The local recipe accepts a literal key as well as a server URL.
     return auth.configure("ollama", method="local", answers={
@@ -327,4 +370,72 @@ def test_managed_websocket_fails_closed(monkeypatch, asynchronous):
             asyncio.run(lm.live(LiveConfig(model="gpt-4o-realtime-preview")))
         else:
             invoke(lm, "stream", False, "gpt-4o-realtime-preview")
+    assert transport.requests == []
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_managed_cloud_preparations_reuse_identity_scoped_provider(monkeypatch, asynchronous):
+    from lm15.cloud import chains
+
+    providers = []
+    def factory(*args, **kwargs):
+        providers.append(object())
+        return "test-key"
+    monkeypatch.setattr(chains, "credential_provider", factory)
+    monkeypatch.setattr(chains, "profile_settings", lambda *args, **kwargs: {})
+    auth = Auth.memory()
+    first = auth.configure("vertex-anthropic", method="cloud", answers={"named": "environment"},
+                           settings={"project": "saved-project", "location": "us-central1"})
+    env = {}
+    router = (AsyncLMRouter if asynchronous else LMRouter)(RouterConfig(auth=auth, env=env))
+    lm = router.lm("vertex-anthropic:claude-test")
+    lm._managed_prepare()
+    lm._managed_prepare()
+    assert len(providers) == 1
+    auth.configure("vertex-anthropic", method="cloud", answers={"named": "environment"},
+                   settings={"project": "saved-project", "location": "us-central1"}, replace=first.id)
+    lm._managed_prepare()
+    lm._managed_prepare()
+    assert len(providers) == 2
+    env["GOOGLE_APPLICATION_CREDENTIALS"] = "/fake/rotated-credentials.json"
+    lm._managed_prepare()
+    lm._managed_prepare()
+    assert len(providers) == 3
+    env["AZURE_CLIENT_SECRET"] = "rotated-fake-secret"
+    lm._managed_prepare()
+    lm._managed_prepare()
+    assert len(providers) == 4
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_managed_local_placeholder_observes_later_configuration(asynchronous):
+    auth = Auth.memory()
+    transport = transport_for("complete", asynchronous)
+    router = (AsyncLMRouter if asynchronous else LMRouter)(RouterConfig(auth=auth, transport=transport, env={}))
+    lm = router.lm("ollama:llama3")
+    invoke(lm, "complete", asynchronous)
+    local(auth, "configured")
+    invoke(lm, "complete", asynchronous)
+    wire_pair(transport.requests[-1], "token-configured", "https://configured.example/v1/chat/completions")
+    auth.logout("ollama")
+    with pytest.raises(AuthOperationError) as error:
+        invoke(lm, "complete", asynchronous)
+    assert error.value.reason == "login_required"
+    assert len(transport.requests) == 2
+
+
+@pytest.mark.parametrize("change", ["configure", "logout"])
+def test_prepared_local_placeholder_rejects_scope_change(change):
+    auth = Auth.memory()
+    transport = FakeTransport([_chat_reply()])
+    router = LMRouter(RouterConfig(auth=auth, transport=transport, env={}))
+    prepared = router.lm("ollama:llama3")._managed_prepare()
+    if change == "configure":
+        local(auth, "configured")
+    else:
+        local(auth, "configured")
+        auth.logout("ollama")
+    with pytest.raises(AuthOperationError) as error:
+        prepared.complete(request())
+    assert error.value.reason == ("connection_changed" if change == "configure" else "login_required")
     assert transport.requests == []
