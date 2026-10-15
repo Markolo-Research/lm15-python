@@ -110,6 +110,8 @@ def validate_document(data: Any, *, where: str) -> Document:
             try:
                 if slot.get("state", "ready") not in ("ready", "needs_login", "indeterminate"):
                     raise ValueError("unknown slot lifecycle state")
+                if "logged_out" in slot and not isinstance(slot["logged_out"], bool):
+                    raise ValueError("logged_out must be a boolean")
                 connection_id = slot.get("connection_id")
                 if connection_id is not None and (not isinstance(connection_id, str) or not connection_id.strip()):
                     raise ValueError("connection_id must be a nonempty string or null")
@@ -150,8 +152,10 @@ def validate_document(data: Any, *, where: str) -> Document:
                 if attempt is not None:
                     if not isinstance(attempt.get("id"), str) or not attempt["id"]:
                         raise ValueError("attempt id must be a nonempty string")
-                    for field, default in (("started_at_s", 0), ("lifetime_s", 900)):
-                        if isinstance(attempt.get(field, default), bool) or not math.isfinite(float(attempt.get(field, default))):
+                    for field in ("started_at_s", "lifetime_s"):
+                        if field not in attempt:
+                            raise ValueError(f"attempt requires {field}")
+                        if isinstance(attempt[field], bool) or not math.isfinite(float(attempt[field])):
                             raise ValueError(f"{field} must be finite")
                     lifetime = attempt.get("lifetime_s", 900)
                     if isinstance(lifetime, bool) or float(lifetime) <= 0:

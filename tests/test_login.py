@@ -1051,6 +1051,10 @@ def test_external_claude_cli_source_reads_in_place(sandbox: Path, monkeypatch: p
     ("previous_ids", [[]]), ("routes", [1]),
     ("settings", {"project": ["bad"], "location": "us-central1"}),
     ("routes", 1), ("attempt", "bad"), ("attempt", {}),
+    *[("logged_out", value) for value in ("false", "true", None, 0, 1, [], {})],
+    ("attempt", {"id": "live"}),
+    ("attempt", {"id": "live", "started_at_s": 0}),
+    ("attempt", {"id": "live", "lifetime_s": 900}),
     *[("renewal_in_flight", value) for value in (
         {}, {"started_at": "2026-01-01T00:00:00Z"}, {"revision": "1"},
         {"started_at": "bad", "revision": "1"},
