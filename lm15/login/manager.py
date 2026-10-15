@@ -1029,8 +1029,15 @@ class AsyncAuth:
         except asyncio.CancelledError:
             cancel.set()
             # Invalidate only this reservation; a synchronous prompt may never return.
+            try:
+                provider_id = self.sync.descriptor(provider).id
+            except AuthOperationError as exc:
+                if exc.reason != "method_unavailable":
+                    raise
+                # Discovery failed before this provider could reserve any state.
+                raise asyncio.CancelledError from None
             cleanup = asyncio.create_task(
-                self._run(self.sync._release, self.sync.descriptor(provider).id, attempt_id, suppress_errors=False)
+                self._run(self.sync._release, provider_id, attempt_id, suppress_errors=False)
             )
             while True:
                 try:

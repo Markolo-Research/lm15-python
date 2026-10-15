@@ -1455,6 +1455,8 @@ def test_malformed_recipe_material_raises_storage_error(sandbox, material):
     {"type": "oauth", "access": "test-token", "refresh": {}},
     {"type": "oauth", "access": "test-token", "accountId": []},
     {"type": "oauth", "access": "test-token", "expires": float("nan")},
+    *[{"type": "oauth", "access": "test-token", field: 10**400}
+      for field in ("expires", "issued_at", "lifetime_s")],
     {"type": "oauth", "access": "test-token", "issued_at": True},
     {"type": "oauth", "access": "test-token", "lifetime_s": "3600"},
 ])
@@ -1489,3 +1491,62 @@ def test_unknown_material_type_raises_storage_error(sandbox, material):
             inspect()
         assert caught.value.reason == "storage_unavailable"
     assert path.read_text(encoding="utf-8") == original
+
+
+@pytest.mark.asyncio
+async def test_unknown_provider_native_cancellation_is_preserved(monkeypatch):
+    import asyncio
+    from lm15.login import AsyncAuth
+
+    auth = AsyncAuth.memory()
+    entered, release, finished = (threading.Event() for _ in range(3))
+    original = auth.sync.login
+
+    def delayed(*args, **kwargs):
+        entered.set()
+        try:
+            assert release.wait(5)
+            return original(*args, **kwargs)
+        finally:
+            finished.set()
+
+    monkeypatch.setattr(auth.sync, "login", delayed)
+    task = asyncio.create_task(auth.login("no-such-provider"))
+    try:
+        assert await asyncio.to_thread(entered.wait, 5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 1)
+        assert auth.sync.store.read() == {}
+    finally:
+        release.set()
+        assert await asyncio.to_thread(finished.wait, 5)
+
+
+@pytest.mark.parametrize("material", [
+    {"type": "external", "source": "bogus"},
+    {"type": "cloud", "named": "bogus"},
+])
+def test_unknown_recipe_discriminator_raises_storage_error(sandbox, material):
+    path = sandbox / "credentials.json"
+    original = json.dumps({"vertex": material})
+    path.write_text(original, encoding="utf-8")
+    auth = Auth.local(path)
+    for inspect in (lambda: auth.status("vertex"), auth.connections,
+                    lambda: auth.request_auth("vertex")):
+        with pytest.raises(AuthOperationError) as caught:
+            inspect()
+        assert caught.value.reason == "storage_unavailable"
+    assert path.read_text(encoding="utf-8") == original
+
+
+def test_supported_recipe_discriminators_validate_without_probing():
+    from lm15.features import NAMED_CREDENTIALS
+    from lm15.login.flows.recipes import EXTERNAL_SOURCES
+    from lm15.login.store import validate_document
+
+    for kind, field, values in (("external", "source", EXTERNAL_SOURCES),
+                                ("cloud", "named", NAMED_CREDENTIALS)):
+        for value in values:
+            document = {"vertex": {"type": kind, field: value}}
+            assert validate_document(document, where="test") == document

@@ -153,18 +153,31 @@ def validate_document(data: Any, *, where: str) -> Document:
         recipe_field = required.get(kind) if isinstance(kind, str) else None
         if recipe_field and (not isinstance(value.get(recipe_field), str) or not value[recipe_field].strip()):
             raise _storage_error(f"Credential store at {where}: entry {key!r} has malformed recipe material; not touching it.")
+        if kind == "external":
+            from .flows.recipes import EXTERNAL_SOURCES
+
+            if value["source"] not in EXTERNAL_SOURCES:
+                raise _storage_error(f"Credential store at {where}: entry {key!r} has an unknown external source; not touching it.")
+        if kind == "cloud":
+            from ..features import NAMED_CREDENTIALS
+
+            if value["named"] not in NAMED_CREDENTIALS:
+                raise _storage_error(f"Credential store at {where}: entry {key!r} has an unknown named identity; not touching it.")
         if kind == "oauth":
             invalid_strings = any(
                 field in value and (not isinstance(value[field], str) or not value[field].strip())
                 for field in ("refresh", "accountId")
             )
-            invalid_times = any(
-                field in value and (
-                    isinstance(value[field], bool) or not isinstance(value[field], (int, float))
-                    or not math.isfinite(value[field])
+            try:
+                invalid_times = any(
+                    field in value and (
+                        isinstance(value[field], bool) or not isinstance(value[field], (int, float))
+                        or not math.isfinite(value[field])
+                    )
+                    for field in ("expires", "issued_at", "lifetime_s")
                 )
-                for field in ("expires", "issued_at", "lifetime_s")
-            )
+            except OverflowError:
+                invalid_times = True
             if invalid_strings or invalid_times:
                 raise _storage_error(f"Credential store at {where}: entry {key!r} has malformed OAuth material; not touching it.")
         if kind == "local" and any(
