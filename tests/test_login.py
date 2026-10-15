@@ -2026,3 +2026,20 @@ async def test_owned_admission_drains_before_cancellation():
     finally:
         release.set()
         await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.parametrize("custom", [
+    {"type": "api_key", "key": "custom-test-key"},
+    {"type": "custom-scheme", "payload": {"account": "test"}},
+])
+def test_managed_store_preserves_unrelated_provider_entries(sandbox, custom):
+    path = sandbox / "credentials.json"
+    data = {"xai": {"type": "api_key", "key": "xai-test-key"}, "custom-provider": custom}
+    path.write_text(json.dumps(data), encoding="utf-8")
+    before = path.read_bytes()
+    auth = Auth.local(path)
+    auth.status("xai")
+    assert {item.provider for item in auth.connections()} == {"xai"}
+    assert path.read_bytes() == before
+    auth.set_api_key("groq", "groq-test-key")
+    assert json.loads(path.read_text())["custom-provider"] == custom
