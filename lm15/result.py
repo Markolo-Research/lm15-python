@@ -25,7 +25,7 @@ from collections import deque
 from dataclasses import dataclass, field, replace
 from typing import Any, AsyncIterator, Iterator
 
-from .errors import LM15Error, StreamAssemblyError, StreamCleanupWarning, error_class_for_code
+from .errors import AuthOperationError, LM15Error, StreamAssemblyError, StreamCleanupWarning, error_class_for_code
 from .types import (
     AudioDelta,
     AudioPart,
@@ -1158,9 +1158,11 @@ def _exception_from_error(event: StreamEvent) -> Exception:
         if not isinstance(wait, (int, float)) or isinstance(wait, bool) or not math.isfinite(wait) or wait < 0:
             wait = None
         request_id = http.get("request_id")
+        lifecycle = ({"reason": "indeterminate", "commit_state": "unknown"}
+                     if issubclass(exc_cls, AuthOperationError) else {})
         return exc_cls(message, provider_code=err.provider_code,
                        request_id=request_id if isinstance(request_id, str) else None,
-                       retry_after=wait, rate_limit_headers=http.get("rate_limit_headers"))
+                       retry_after=wait, rate_limit_headers=http.get("rate_limit_headers"), **lifecycle)
     return exc_cls(message)
 
 
