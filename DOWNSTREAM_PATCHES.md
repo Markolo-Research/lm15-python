@@ -100,11 +100,48 @@ Final validation retains zero new mypy findings and all strict offline
 conformance lanes. The public registry and adapter import surfaces coexist;
 no DSPy facade workaround is required.
 
-11. `cde858320eb066c815ddc7d5adb43605f0023180`: propagate cancellation from
-    AsyncAuth.login into its synchronous worker and join that worker. A final
-    cancellation/deadline check runs before persistence. The existing login
-    suite proves that a late grant cannot be saved after cancellation.
+11. `cde858320eb066c815ddc7d5adb43605f0023180`: initial cancellation propagation.
+    This is an intermediate implementation, superseded by patches 12–18 below.
+    Do not stop replay here: joining a blocked synchronous prompt is unsafe.
 
 The final source suite passes 3,719 tests (8 optional skips, the same two
 reserved-IP timeout cases deselected); all six strict conformance lanes and
 the pinned 32-program mypy gate pass with no baseline increase.
+
+## Subsequent review corrections (required replay continuation)
+
+12. `a521c778ed9a8103f34c38a3f5eeb4dfaaa758c6`: transactional cancellation,
+    attempt ownership, verification identity and malformed slot validation.
+13. `e20203aee57097c63eae0c2da0147576aa996af0`: daemonize interactive login
+    so an uninterruptible prompt cannot hold default-executor shutdown.
+14. `01198ff15327a2b8ccc4a67ed695182917b02e00`: reject cancelled attempts
+    inside the reservation transaction, including late worker scheduling.
+15. `c6df77e6ec68f25bda712982ad6b542c46d3db28`: register the cancellation
+    event inside its reservation transaction and clean up failed reservations.
+16. `3ca8bfaffbba5d62131dd41b86cc2dddc4b2d1e4`: await the same durable
+    cleanup operation despite repeated native task cancellation.
+17. `8f02f8899e2ea146f4e16c3d70d813c3486cb938`: avoid Python 3.14 shield
+    exception logging and surface failed durable cancellation cleanup.
+18. `0e59602109dae9d0cf32fa0b305a17cc957c1233`: validate verification
+    records and release configure reservations on unsuccessful exits.
+19. `6334bfd5933279b9c13ff6fed4fc027f63fca8fa`: explicit UTF-8 in test
+    fixtures and subprocesses for strict warning mode.
+20. `64d42abcbb3e3ea04fc34ecaeea89da18009c7be`: require explicit live-test
+    opt-in and model selection before any credential read; no model defaults.
+21. `83641cd514b6f311fe4fa8d13c2712e8249bc970`: reject non-string stored
+    connection settings at the typed storage boundary.
+22. `0c19e6d4ea6a015f7b87b0c3fd1abc4fd9bdf16e`: regression for AUTH-19's
+    commit-winning native cancellation, without deleting committed credentials.
+23. `46c95a7c3c3e568fcd9658c5cff3d3e596670d67`: validate required recipe
+    material before status or request dispatch; preserve malformed files.
+24. `3e048b95b4d8e98369ca268f1cbf55964b3e369e`: separate the optional
+    recipe-field variable from slot-field typing.
+
+Patches 12–24 are ordered descendants of patch 11 and must be replayed too.
+The earlier suite counts above describe historical intermediate stacks.
+At patch 24, strict offline login/subscription validation passed 113 tests,
+with two live tests excluded, zero external network attempts, zero new typing
+findings, 32 clean user programs, and passing signatures/lock/diff checks.
+Future replay must rerun the full qualification described above; these counts
+are not evidence for a newer upstream base. Keep this replay manifest and
+DSPy's generated provenance aligned whenever another correction is added.
